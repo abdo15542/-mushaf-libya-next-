@@ -22,7 +22,6 @@ jobs:
           node-version: 22
           cache: npm
 
-      - 
       - name: Restore Quran PDF
         shell: bash
         run: |

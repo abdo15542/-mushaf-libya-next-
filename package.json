@@ -1,0 +1,29 @@
+{
+  "name": "mushaf-libya-next",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "vitest run",
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@capacitor/android": "^8.5.3",
+    "@capacitor/core": "^8.5.3",
+    "pdfjs-dist": "^6.4.299",
+    "vite": "^8.3.4"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.5.3",
+    "vitest": "^5.0.3"
+  },
+  "directories": {
+    "test": "tests"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "name": "مصحف ليبيا التفاعلي",
+  "short_name": "مصحف ليبيا",
+  "description": "المصحف التفاعلي برواية قالون",
+  "lang": "ar",
+  "dir": "rtl",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#061b16",
+  "theme_color": "#124638"
+}

@@ -1,0 +1,92 @@
+import * as pdfjs from 'pdfjs-dist';
+import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+import './style.css';
+
+pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
+
+const app = document.querySelector('#app');
+
+app.innerHTML = `
+  <header>
+    <div class="brand">مصحف ليبيا</div>
+    <div class="subtitle">المصحف التفاعلي — رواية قالون</div>
+  </header>
+  <main>
+    <section class="toolbar">
+      <button id="prev">السابقة</button>
+      <label>الصفحة
+        <input id="page" type="number" min="1" value="1">
+      </label>
+      <button id="go">انتقال</button>
+      <button id="next">التالية</button>
+      <button id="bookmark">حفظ العلامة</button>
+    </section>
+    <p id="status" role="status">جارٍ تحميل المصحف…</p>
+    <section class="reader">
+      <canvas id="pageCanvas" aria-label="صفحة المصحف"></canvas>
+    </section>
+    <section class="tools">
+      <h2>البحث في النص القرآني</h2>
+      <p>يتطلب البحث النصي قاعدة قرآنية موثوقة مطابقة لرواية قالون. لم تُضف قاعدة النص بعد.</p>
+      <h2>القراءة المحفوظة</h2>
+      <p id="saved">لا توجد علامة محفوظة.</p>
+    </section>
+  </main>
+`;
+
+const canvas = document.querySelector('#pageCanvas');
+const ctx = canvas.getContext('2d');
+const pageInput = document.querySelector('#page');
+const status = document.querySelector('#status');
+const saved = document.querySelector('#saved');
+let pdf;
+let pageNumber = Number(localStorage.getItem('mushaf-page') || 1);
+let rendering = false;
+
+async function renderPage(number) {
+  if (!pdf || rendering) return;
+  pageNumber = Math.max(1, Math.min(pdf.numPages, number));
+  rendering = true;
+  status.textContent = 'جارٍ عرض الصفحة…';
+
+  try {
+    const page = await pdf.getPage(pageNumber);
+    const viewport = page.getViewport({ scale: 1.5 });
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    await page.render({ canvasContext: ctx, viewport }).promise;
+    pageInput.value = pageNumber;
+    localStorage.setItem('mushaf-page', String(pageNumber));
+    status.textContent = `الصفحة ${pageNumber} من ${pdf.numPages}`;
+  } catch (error) {
+    status.textContent = 'تعذر عرض الصفحة. حاول مجددًا.';
+    console.error(error);
+  } finally {
+    rendering = false;
+  }
+}
+
+document.querySelector('#prev').addEventListener('click', () => renderPage(pageNumber - 1));
+document.querySelector('#next').addEventListener('click', () => renderPage(pageNumber + 1));
+document.querySelector('#go').addEventListener('click', () => {
+  const n = Number(pageInput.value);
+  if (Number.isInteger(n)) renderPage(n);
+});
+document.querySelector('#bookmark').addEventListener('click', () => {
+  localStorage.setItem('mushaf-bookmark', String(pageNumber));
+  saved.textContent = `الصفحة المحفوظة: ${pageNumber}`;
+});
+
+const bookmark = localStorage.getItem('mushaf-bookmark');
+if (bookmark) saved.textContent = `الصفحة المحفوظة: ${bookmark}`;
+
+(async () => {
+  try {
+    pdf = await pdfjs.getDocument('/assets/mushaf-qalun.pdf').promise;
+    pageInput.max = pdf.numPages;
+    await renderPage(pageNumber);
+  } catch (error) {
+    status.textContent = 'تعذر تحميل المصحف. تحقق من وجود ملف PDF داخل public/assets.';
+    console.error(error);
+  }
+})();

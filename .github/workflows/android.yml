@@ -22,12 +22,23 @@ jobs:
           node-version: 22
           cache: npm
 
+      - 
       - name: Restore Quran PDF
         shell: bash
         run: |
-          cat upload-parts/mushaf.part-* > public/assets/mushaf-qalun.pdf
+          set -euo pipefail
+          mkdir -p public/assets
+          ls -lh upload-parts/
+          shopt -s nullglob
+          parts=(upload-parts/mushaf.part-*)
+          if [ "${#parts[@]}" -lt 1 ]; then
+            echo "::error::No Quran PDF parts found in upload-parts/"
+            exit 1
+          fi
+          cat "${parts[@]}" > public/assets/mushaf-qalun.pdf
           test -s public/assets/mushaf-qalun.pdf
           file public/assets/mushaf-qalun.pdf
+          wc -c public/assets/mushaf-qalun.pdf
 
       - name: Install Node dependencies
         run: npm ci

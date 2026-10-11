@@ -1,3 +1,4 @@
+
 name: Build Mushaf Libya APK
 
 on:
@@ -12,6 +13,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout project
         uses: actions/checkout@v4
@@ -26,16 +28,30 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
           mkdir -p public/assets
-          ls -lh upload-parts/
+
+          if [ ! -d "upload-parts" ]; then
+            echo "::error::Directory upload-parts/ not found"
+            exit 1
+          fi
+
           shopt -s nullglob
           parts=(upload-parts/mushaf.part-*)
+
           if [ "${#parts[@]}" -lt 1 ]; then
             echo "::error::No Quran PDF parts found in upload-parts/"
             exit 1
           fi
+
+          printf '%s\n' "Found PDF parts:"
+          printf '%s\n' "${parts[@]}"
+
           cat "${parts[@]}" > public/assets/mushaf-qalun.pdf
+
           test -s public/assets/mushaf-qalun.pdf
+
+          echo "PDF file information:"
           file public/assets/mushaf-qalun.pdf
           wc -c public/assets/mushaf-qalun.pdf
 
@@ -51,18 +67,55 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      -       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
         with:
           packages: platform-tools
+
+      - name: Verify Android project
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ ! -f "capacitor.config.ts" ] && \
+             [ ! -f "capacitor.config.json" ] && \
+             [ ! -f "capacitor.config.js" ]; then
+            echo "::error::Capacitor configuration file not found"
+            exit 1
+          fi
+
+          if [ ! -d "android" ]; then
+            echo "::error::Android project directory not found"
+            exit 1
+          fi
+
+          echo "Capacitor configuration and Android directory found."
+
       - name: Sync Capacitor
         run: npx cap sync android
 
       - name: Build debug APK
         working-directory: android
+        shell: bash
         run: |
+          set -euo pipefail
           chmod +x gradlew
-          ./gradlew assembleDebug
+          ./gradlew --no-daemon assembleDebug
+
+      - name: Verify APK
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          APK="android/app/build/outputs/apk/debug/app-debug.apk"
+
+          if [ ! -s "$APK" ]; then
+            echo "::error::APK was not generated"
+            exit 1
+          fi
+
+          ls -lh "$APK"
+          file "$APK"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

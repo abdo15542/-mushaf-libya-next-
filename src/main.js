@@ -55,6 +55,31 @@ app.innerHTML = `
         <button id="nextDhikr">الذكر التالي</button>
       </div>
     </section>
+
+    <section class="tools audio-tools" aria-labelledby="audioHeading">
+      <h2 id="audioHeading">استماع الدوكالي — رواية قالون</h2>
+      <p>الشيخ الدوكالي محمد العالم · قالون عن نافع</p>
+
+      <label for="audioSurah">اختر السورة</label>
+      <select id="audioSurah"></select>
+
+      <audio id="quranAudio" controls preload="none">
+        متصفحك لا يدعم تشغيل الصوت.
+      </audio>
+
+      <div class="audio-actions">
+        <button id="streamAudio" type="button">استماع عبر الإنترنت</button>
+        <button id="downloadAudio" type="button">تنزيل السورة للاستماع دون إنترنت</button>
+        <button id="playSavedAudio" type="button">تشغيل النسخة المحفوظة</button>
+        <button id="deleteSavedAudio" type="button">حذف النسخة المحفوظة</button>
+      </div>
+
+      <p id="audioStatus" role="status" aria-live="polite">
+        اختر سورة للاستماع أو تنزيلها.
+      </p>
+      <p id="audioStorageInfo" class="audio-muted"></p>
+    </section>
+
   </main>
 `;
 
@@ -389,3 +414,246 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
       .catch(error => console.error('تعذر تسجيل الخدمة:', error));
   });
 }
+
+
+// مشغل الدوكالي: قالون عن نافع، مع حفظ السور المختارة محليًا.
+(() => {
+  const $audio = id => document.getElementById(id);
+  const select = $audio('audioSurah');
+  const player = $audio('quranAudio');
+  const status = $audio('audioStatus');
+  const downloadButton = $audio('downloadAudio');
+  const savedButton = $audio('playSavedAudio');
+  const deleteButton = $audio('deleteSavedAudio');
+
+  if (!select || !player || !status) return;
+
+  const surahs = [
+    'الفاتحة','البقرة','آل عمران','النساء','المائدة','الأنعام',
+    'الأعراف','الأنفال','التوبة','يونس','هود','يوسف','الرعد',
+    'إبراهيم','الحجر','النحل','الإسراء','الكهف','مريم','طه',
+    'الأنبياء','الحج','المؤمنون','النور','الفرقان','الشعراء',
+    'النمل','القصص','العنكبوت','الروم','لقمان','السجدة','الأحزاب',
+    'سبأ','فاطر','يس','الصافات','ص','الزمر','غافر','فصلت',
+    'الشورى','الزخرف','الدخان','الجاثية','الأحقاف','محمد',
+    'الفتح','الحجرات','ق','الذاريات','الطور','النجم','القمر',
+    'الرحمن','الواقعة','الحديد','المجادلة','الحشر','الممتحنة',
+    'الصف','الجمعة','المنافقون','التغابن','الطلاق','التحريم',
+    'الملك','القلم','الحاقة','المعارج','نوح','الجن','المزمل',
+    'المدثر','القيامة','الإنسان','المرسلات','النبأ','النازعات',
+    'عبس','التكوير','الانفطار','المطففين','الانشقاق','البروج',
+    'الطارق','الأعلى','الغاشية','الفجر','البلد','الشمس','الليل',
+    'الضحى','الشرح','التين','العلق','القدر','البينة','الزلزلة',
+    'العاديات','القارعة','التكاثر','العصر','الهمزة','الفيل',
+    'قريش','الماعون','الكوثر','الكافرون','النصر','المسد',
+    'الإخلاص','الفلق','الناس'
+  ];
+
+  const server = 'https://cdn.mp3quran.net/audio/dokali-alim/r1/';
+  const DB_NAME = 'mushaf-audio-v1';
+  const STORE = 'tracks';
+  let dbPromise;
+  let currentObjectUrl = null;
+  let busy = false;
+
+  surahs.forEach((name, index) => {
+    const option = document.createElement('option');
+    option.value = String(index + 1);
+    option.textContent = `${index + 1}. سورة ${name}`;
+    select.append(option);
+  });
+
+  function audioUrl(id) {
+    return server + String(id).padStart(3, '0') + '.mp3';
+  }
+
+  function openDB() {
+    if (!('indexedDB' in window)) {
+      return Promise.reject(new Error('التخزين المحلي غير مدعوم في هذا المتصفح.'));
+    }
+    if (dbPromise) return dbPromise;
+
+    dbPromise = new Promise((resolve, reject) => {
+      const request = indexedDB.open(DB_NAME, 1);
+      request.onupgradeneeded = () => {
+        const db = request.result;
+        if (!db.objectStoreNames.contains(STORE)) {
+          db.createObjectStore(STORE, { keyPath: 'id' });
+        }
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    return dbPromise;
+  }
+
+  async function getTrack(id) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const request = db.transaction(STORE, 'readonly')
+        .objectStore(STORE).get(Number(id));
+      request.onsuccess = () => resolve(request.result || null);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  async function saveTrack(track) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORE, 'readwrite');
+      transaction.objectStore(STORE).put(track);
+      transaction.oncomplete = resolve;
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error || new Error('أُلغي الحفظ.'));
+    });
+  }
+
+  async function removeTrack(id) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORE, 'readwrite');
+      transaction.objectStore(STORE).delete(Number(id));
+      transaction.oncomplete = resolve;
+      transaction.onerror = () => reject(transaction.error);
+    });
+  }
+
+  function releaseObjectUrl() {
+    if (currentObjectUrl) {
+      URL.revokeObjectURL(currentObjectUrl);
+      currentObjectUrl = null;
+    }
+  }
+
+  function selectedName() {
+    return surahs[Number(select.value) - 1] || '';
+  }
+
+  async function refreshAudioButtons() {
+    try {
+      const track = await getTrack(select.value);
+      savedButton.disabled = !track;
+      deleteButton.disabled = !track;
+      downloadButton.disabled = busy;
+      if (track) {
+        status.textContent = `السورة محفوظة على هذا الجهاز: ${selectedName()}.`;
+      } else if (!busy) {
+        status.textContent = `السورة غير محفوظة بعد: ${selectedName()}.`;
+      }
+    } catch (error) {
+      savedButton.disabled = true;
+      deleteButton.disabled = true;
+      status.textContent = error.message || 'تعذر الوصول إلى التخزين المحلي.';
+    }
+  }
+
+  select.addEventListener('change', () => {
+    refreshAudioButtons();
+  });
+
+  $audio('streamAudio').addEventListener('click', async () => {
+    releaseObjectUrl();
+    player.src = audioUrl(select.value);
+    player.load();
+    status.textContent = `جارٍ تجهيز سورة ${selectedName()} عبر الإنترنت…`;
+    try {
+      await player.play();
+      status.textContent = `تستمع الآن إلى سورة ${selectedName()}.`;
+    } catch {
+      status.textContent = 'اضغط زر التشغيل داخل مشغل الصوت لبدء التلاوة.';
+    }
+  });
+
+  downloadButton.addEventListener('click', async () => {
+    if (busy) return;
+    busy = true;
+    downloadButton.disabled = true;
+    status.textContent = `جارٍ تنزيل سورة ${selectedName()}… لا تغلق التطبيق.`;
+
+    try {
+      const response = await fetch(audioUrl(select.value));
+      if (!response.ok) throw new Error(`فشل التنزيل: HTTP ${response.status}`);
+
+      const blob = await response.blob();
+      if (!blob.size || (blob.type && !blob.type.includes('audio'))) {
+        throw new Error('الملف المستلم ليس ملفًا صوتيًا صالحًا.');
+      }
+
+      await saveTrack({
+        id: Number(select.value),
+        name: selectedName(),
+        blob,
+        size: blob.size,
+        savedAt: Date.now()
+      });
+
+      const mb = (blob.size / 1024 / 1024).toFixed(2);
+      status.textContent = `تم حفظ سورة ${selectedName()} للاستماع دون إنترنت (${mb} ميغابايت).`;
+    } catch (error) {
+      console.error('Audio download failed:', error);
+      status.textContent =
+        'تعذر التنزيل أو الحفظ. تحقق من الإنترنت ومساحة الهاتف، ثم أعد المحاولة.';
+    } finally {
+      busy = false;
+      downloadButton.disabled = false;
+      await refreshAudioButtons();
+    }
+  });
+
+  savedButton.addEventListener('click', async () => {
+    try {
+      const track = await getTrack(select.value);
+      if (!track) {
+        status.textContent = 'هذه السورة غير محفوظة. نزّلها أولًا أثناء الاتصال بالإنترنت.';
+        return;
+      }
+      releaseObjectUrl();
+      currentObjectUrl = URL.createObjectURL(track.blob);
+      player.src = currentObjectUrl;
+      player.load();
+      status.textContent = `تشغيل سورة ${track.name} من النسخة المحفوظة على الجهاز.`;
+      try {
+        await player.play();
+      } catch {
+        status.textContent = 'النسخة محفوظة. اضغط زر التشغيل داخل مشغل الصوت.';
+      }
+    } catch (error) {
+      status.textContent = error.message || 'تعذر تشغيل النسخة المحفوظة.';
+    }
+  });
+
+  deleteButton.addEventListener('click', async () => {
+    try {
+      await removeTrack(select.value);
+      if (currentObjectUrl) {
+        player.pause();
+        player.removeAttribute('src');
+        player.load();
+        releaseObjectUrl();
+      }
+      status.textContent = `حُذفت النسخة المحفوظة من سورة ${selectedName()}.`;
+      await refreshAudioButtons();
+    } catch (error) {
+      status.textContent = error.message || 'تعذر حذف النسخة المحفوظة.';
+    }
+  });
+
+  player.addEventListener('error', () => {
+    status.textContent = 'تعذر تشغيل الصوت. تحقق من الاتصال أو أعد تنزيل السورة.';
+  });
+
+  window.addEventListener('pagehide', releaseObjectUrl);
+
+  if (navigator.storage && navigator.storage.estimate) {
+    navigator.storage.estimate().then(info => {
+      const used = info.usage == null ? null : (info.usage / 1024 / 1024).toFixed(1);
+      const quota = info.quota == null ? null : (info.quota / 1024 / 1024).toFixed(0);
+      const el = $audio('audioStorageInfo');
+      if (el && used !== null && quota !== null) {
+        el.textContent = `استخدام التخزين التقريبي للتطبيق: ${used} من ${quota} ميغابايت.`;
+      }
+    }).catch(() => {});
+  }
+
+  refreshAudioButtons();
+})();

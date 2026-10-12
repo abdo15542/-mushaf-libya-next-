@@ -158,3 +158,49 @@ canvas {
   main { padding: 10px; }
   .toolbar button { flex: 1 1 42%; }
 }
+
+
+/* مشغل تلاوة الدوكالي */
+.audio-tools label {
+  display: block;
+  margin: 12px 0 6px;
+  font-weight: 700;
+}
+
+#audioSurah {
+  display: block;
+  width: 100%;
+  margin-bottom: 12px;
+}
+
+#quranAudio {
+  display: block;
+  width: 100%;
+  margin: 12px 0;
+}
+
+.audio-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.audio-actions button {
+  flex: 1 1 220px;
+}
+
+#audioStatus {
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+
+.audio-muted {
+  color: var(--muted);
+  font-size: .9rem;
+}
+
+.audio-actions button:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}

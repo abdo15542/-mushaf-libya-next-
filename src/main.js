@@ -8,13 +8,50 @@ pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 const app = document.querySelector('#app');
 
 app.innerHTML = `
-  <header>
+  <header class="app-header">
+    <div class="brand-mark" aria-hidden="true">۞</div>
     <div class="brand">مصحف ليبيا</div>
-    <div class="subtitle">المصحف التفاعلي — رواية قالون</div>
-    <button id="themeToggle" type="button">الوضع الليلي / النهاري</button>
+    <div class="subtitle">المصحف التفاعلي · رواية قالون عن نافع</div>
+    <button id="themeToggle" type="button" aria-label="تغيير المظهر">☼ المظهر</button>
   </header>
 
+  <nav class="bottom-nav" aria-label="التنقل الرئيسي">
+    <button type="button" data-view="homeView" class="nav-item active">⌂<span>الرئيسية</span></button>
+    <button type="button" data-view="readerView" class="nav-item">▤<span>المصحف</span></button>
+    <button type="button" data-view="audioView" class="nav-item">♫<span>التلاوة</span></button>
+    <button type="button" data-view="dhikrView" class="nav-item">۞<span>الأذكار</span></button>
+    <button type="button" data-view="toolsView" class="nav-item">☰<span>الأدوات</span></button>
+  </nav>
+
   <main>
+    <section id="homeView" class="home-view">
+      <div class="welcome-card">
+        <div class="welcome-eyebrow">رفيقك اليومي مع القرآن الكريم</div>
+        <h1>السلام عليكم ورحمة الله</h1>
+        <p>اجعل لك مع القرآن وردًا كل يوم.</p>
+        <button type="button" data-open-view="readerView" class="gold-button">متابعة القراءة ←</button>
+      </div>
+
+      <div class="section-heading">
+        <div><h2>متابعة القراءة</h2><p>ارجع إلى موضعك الأخير</p></div>
+        <span class="ornament">۞</span>
+      </div>
+      <button type="button" id="continueReading" class="continue-card">
+        <span class="book-icon">▤</span>
+        <span class="continue-copy"><strong>المصحف الشريف</strong><small id="lastPageLabel">الصفحة الأخيرة المحفوظة</small></span>
+        <span class="continue-arrow">←</span>
+      </button>
+
+      <div class="section-heading"><div><h2>الوصول السريع</h2><p>كل ما تحتاجه في مكان واحد</p></div></div>
+      <div class="quick-grid">
+        <button type="button" data-open-view="readerView" class="quick-card"><span class="quick-icon">📖</span><strong>قراءة المصحف</strong><small>تابع وردك اليومي</small></button>
+        <button type="button" data-open-view="audioView" class="quick-card"><span class="quick-icon">♫</span><strong>الاستماع</strong><small>الدوكالي · قالون</small></button>
+        <button type="button" data-open-view="dhikrView" class="quick-card"><span class="quick-icon">۞</span><strong>الأذكار والتسبيح</strong><small>اذكر الله في كل وقت</small></button>
+        <button type="button" data-open-view="toolsView" class="quick-card"><span class="quick-icon">⌕</span><strong>البحث والعلامات</strong><small>اعثر على موضعك سريعًا</small></button>
+      </div>
+      <div class="daily-note"><span>✦</span><div><strong>بالقرآن تحيا القلوب</strong><p>اقرأ بتدبر، ولو آيات قليلة كل يوم.</p></div></div>
+    </section>
+    <section id="readerView" class="app-view">
     <section class="toolbar">
       <button id="prev">الصفحة السابقة</button>
       <label>رقم الصفحة
@@ -31,6 +68,9 @@ app.innerHTML = `
       <canvas id="pageCanvas" aria-label="صفحة المصحف"></canvas>
     </section>
 
+    </section>
+
+    <section id="toolsView" class="app-view">
     <section class="tools">
       <h2>العلامات المرجعية</h2>
       <ul id="bookmarks"></ul>
@@ -45,6 +85,9 @@ app.innerHTML = `
       <ol id="searchResults"></ol>
     </section>
 
+    </section>
+
+    <section id="dhikrView" class="app-view">
     <section class="tools">
       <h2>الأذكار والتسبيح</h2>
       <p id="dhikrText" class="dhikr-text">سُبْحَانَ اللَّهِ</p>
@@ -56,6 +99,9 @@ app.innerHTML = `
       </div>
     </section>
 
+    </section>
+
+    <section id="audioView" class="app-view">
     <section class="tools audio-tools" aria-labelledby="audioHeading">
       <h2 id="audioHeading">استماع الدوكالي — رواية قالون</h2>
       <p>الشيخ الدوكالي محمد العالم · قالون عن نافع</p>
@@ -79,11 +125,47 @@ app.innerHTML = `
       </p>
       <p id="audioStorageInfo" class="audio-muted"></p>
     </section>
+    </section>
 
   </main>
 `;
 
+
 const $ = selector => document.querySelector(selector);
+
+// التنقل بين واجهات التطبيق مع إبقاء أقسامه ووظائفه في الصفحة نفسها.
+function showView(viewId) {
+  const target = document.getElementById(viewId);
+  if (!target) return;
+
+  document.querySelectorAll('.app-view, .home-view').forEach(view => {
+    view.hidden = view.id !== viewId;
+  });
+
+  document.querySelectorAll('.nav-item').forEach(button => {
+    const active = button.dataset.view === viewId;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-current', active ? 'page' : 'false');
+  });
+
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  if (viewId === 'readerView' && typeof renderPage === 'function') {
+    // العرض الطبيعي يستمر عبر آلية تحميل المصحف الحالية.
+  }
+}
+
+document.querySelectorAll('[data-view]').forEach(button => {
+  button.addEventListener('click', () => showView(button.dataset.view));
+});
+document.querySelectorAll('[data-open-view]').forEach(button => {
+  button.addEventListener('click', () => showView(button.dataset.openView));
+});
+document.getElementById('continueReading')?.addEventListener('click', () => {
+  showView('readerView');
+});
+
+showView('homeView');
+
 const canvas = $('#pageCanvas');
 const ctx = canvas.getContext('2d');
 const pageInput = $('#page');
@@ -91,6 +173,8 @@ const status = $('#status');
 
 let pdf = null;
 let pageNumber = Number(localStorage.getItem('mushaf-page') || 1);
+const lastPageLabel = document.getElementById('lastPageLabel');
+if (lastPageLabel) lastPageLabel.textContent = `آخر موضع محفوظ: الصفحة ${pageNumber}`;
 let rendering = false;
 let pendingPage = null;
 let searchIndex = null;

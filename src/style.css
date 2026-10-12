@@ -1,39 +1,160 @@
+
 :root {
   font-family: system-ui, sans-serif;
-  color: #f5f1e5;
-  background: #091a16;
   font-synthesis: none;
+  --bg: #091a16;
+  --panel: #10271f;
+  --reader: #172c25;
+  --text: #f5f1e5;
+  --muted: #d4e5d9;
+  --accent: #1d624d;
+  --border: #355c4d;
 }
+
+:root[data-theme="light"] {
+  --bg: #f6f5ef;
+  --panel: #fff;
+  --reader: #e8eee9;
+  --text: #1b2922;
+  --muted: #46594d;
+  --accent: #236b51;
+  --border: #b6c9bd;
+}
+
 * { box-sizing: border-box; }
-body { margin: 0; }
+
+body {
+  margin: 0;
+  color: var(--text);
+  background: var(--bg);
+  transition: background .2s, color .2s;
+}
+
 header {
   padding: 24px 16px;
   text-align: center;
   background: #123f32;
+  color: #f5f1e5;
   border-bottom: 1px solid #477765;
 }
+
 .brand { font-size: 1.8rem; font-weight: 800; }
-.subtitle { margin-top: 8px; color: #d4e5d9; }
-main { max-width: 900px; margin: auto; padding: 16px; }
+.subtitle { margin: 8px 0 14px; color: #d4e5d9; }
+
+main {
+  max-width: 900px;
+  margin: auto;
+  padding: 16px;
+}
+
 .toolbar {
-  display: flex; flex-wrap: wrap; align-items: center;
-  justify-content: center; gap: 10px; margin-bottom: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 16px;
 }
+
 button, input {
-  font: inherit; border-radius: 10px; padding: 10px;
+  font: inherit;
+  border-radius: 10px;
+  padding: 10px;
 }
+
 button {
-  color: white; background: #1d624d; border: 1px solid #568b76;
+  color: white;
+  background: var(--accent);
+  border: 1px solid #568b76;
+  cursor: pointer;
 }
-button:active { transform: scale(.98); }
-input { width: 78px; background: #fff; color: #111; }
+
+button:focus-visible, input:focus-visible {
+  outline: 3px solid #d2a84b;
+  outline-offset: 2px;
+}
+
+button.secondary {
+  background: transparent;
+  color: var(--text);
+  border-color: var(--border);
+}
+
+input {
+  min-width: 0;
+  width: 100px;
+  background: white;
+  color: #111;
+  border: 1px solid #aaa;
+}
+
+#searchInput {
+  flex: 1;
+  width: auto;
+  min-width: 140px;
+}
+
 .reader {
-  background: #172c25; padding: 10px; border-radius: 14px;
-  border: 1px solid #355c4d; overflow: auto; text-align: center;
+  background: var(--reader);
+  padding: 10px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  overflow: auto;
+  text-align: center;
 }
-canvas { max-width: 100%; height: auto; background: white; }
+
+canvas {
+  max-width: 100%;
+  height: auto;
+  background: white;
+}
+
 .tools {
-  margin-top: 16px; padding: 16px;
-  background: #10271f; border-radius: 14px;
+  margin-top: 16px;
+  padding: 16px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
 }
-#status { text-align: center; color: #d4e5d9; }
+
+.tools h2 { font-size: 1.2rem; margin-top: 8px; }
+
+#status, #searchStatus {
+  text-align: center;
+  color: var(--muted);
+}
+
+#searchForm {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+#bookmarks { padding-inline-start: 24px; }
+
+#bookmarks li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+#searchResults li { margin: 8px 0; }
+
+.result-button {
+  width: 100%;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.dhikr-text {
+  font-size: 1.6rem;
+  line-height: 2;
+  text-align: center;
+}
+
+@media (max-width: 480px) {
+  main { padding: 10px; }
+  .toolbar button { flex: 1 1 42%; }
+}

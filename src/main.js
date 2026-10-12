@@ -53,12 +53,14 @@ app.innerHTML = `
     </section>
     <section id="readerView" class="app-view">
     <section class="toolbar">
+      <button id="firstPage" type="button">أول المصحف</button>
       <button id="prev">الصفحة السابقة</button>
       <label>رقم الصفحة
         <input id="page" type="number" min="1" value="1">
       </label>
       <button id="go">انتقال</button>
       <button id="next">الصفحة التالية</button>
+      <button id="lastPage" type="button">آخر المصحف</button>
       <button id="bookmark">حفظ العلامة</button>
     </section>
 
@@ -261,8 +263,12 @@ async function renderPage(number) {
 }
 
 // التنقل بين الصفحات
+$('#firstPage').addEventListener('click', () => renderPage(1));
 $('#prev').addEventListener('click', () => renderPage(pageNumber - 1));
 $('#next').addEventListener('click', () => renderPage(pageNumber + 1));
+$('#lastPage').addEventListener('click', () => {
+  if (pdf) renderPage(pdf.numPages);
+});
 
 $('#go').addEventListener('click', () => {
   const value = Number(pageInput.value);

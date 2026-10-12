@@ -431,3 +431,20 @@ main { padding-top: 18px; }
   .nav-item span { font-size: .62rem; }
   .quick-card { padding: 12px; }
 }
+
+/* تحسين أزرار التنقل بين صفحات المصحف */
+#readerView > .toolbar {
+  padding: 12px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+}
+
+#readerView > .toolbar button {
+  min-height: 44px;
+}
+
+#readerView #page {
+  min-height: 42px;
+}
+

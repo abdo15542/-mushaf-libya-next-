@@ -2,6 +2,7 @@
 import * as pdfjs from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import './style.css';
+import { surahNames } from './surah-index.js';
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 
@@ -64,6 +65,20 @@ app.innerHTML = `
       <button id="bookmark">حفظ العلامة</button>
     </section>
 
+    <button id="toggleSurahIndex" type="button">📖 فهرس السور</button>
+    <section id="surahIndexPanel" hidden>
+      <h2>فهرس السور</h2>
+      <label for="surahSearch">ابحث عن سورة</label>
+      <input id="surahSearch" type="search" placeholder="اسم السورة">
+      <label for="surahSelect">اختر السورة</label>
+      <select id="surahSelect"></select>
+      <label for="surahPage">صفحة بداية السورة</label>
+      <input id="surahPage" type="number" min="1" max="627" placeholder="رقم الصفحة بعد التحقق">
+      <button id="saveSurahPage" type="button">حفظ بداية السورة</button>
+      <button id="openSurahPage" type="button">الانتقال إلى الصفحة المحفوظة</button>
+      <p id="surahIndexStatus" role="status"></p>
+      <ul id="surahSavedList"></ul>
+    </section>
     <p id="status" role="status">جارٍ تحميل المصحف…</p>
 
     <section class="reader">
@@ -752,4 +767,133 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
   }
 
   refreshAudioButtons();
+})();
+
+
+// SURAH_INDEX_FEATURE
+(() => {
+  const panel = document.getElementById('surahIndexPanel');
+  const toggle = document.getElementById('toggleSurahIndex');
+  const search = document.getElementById('surahSearch');
+  const select = document.getElementById('surahSelect');
+  const pageInput = document.getElementById('surahPage');
+  const saveButton = document.getElementById('saveSurahPage');
+  const openButton = document.getElementById('openSurahPage');
+  const message = document.getElementById('surahIndexStatus');
+  const savedList = document.getElementById('surahSavedList');
+  const storageKey = 'mushaf-surah-pages';
+
+  if (!panel || !toggle || !search || !select || !pageInput ||
+      !saveButton || !openButton || !message || !savedList) {
+    console.warn('تعذر تهيئة فهرس السور: بعض عناصر الواجهة غير موجودة.');
+    return;
+  }
+
+  const readSaved = () => {
+    try {
+      const value = JSON.parse(localStorage.getItem(storageKey) || '{}');
+      return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+    } catch {
+      return {};
+    }
+  };
+
+  const saved = readSaved();
+
+  function fillSelect() {
+    const query = (search.value || '').trim().replace(/\s+/g, ' ');
+    const previous = select.value;
+    const matches = surahNames
+      .map((name, index) => ({ name, number: index + 1 }))
+      .filter(item => item.name.includes(query));
+
+    select.replaceChildren();
+    for (const item of matches) {
+      const option = document.createElement('option');
+      option.value = String(item.number);
+      option.textContent = `${item.number}. ${item.name}`;
+      select.appendChild(option);
+    }
+
+    if (matches.some(item => String(item.number) === previous)) {
+      select.value = previous;
+    }
+    updateSavedList();
+  }
+
+  function updateSavedList() {
+    savedList.replaceChildren();
+    surahNames.forEach((name, index) => {
+      const page = Number(saved[String(index + 1)]);
+      if (!Number.isInteger(page) || page < 1 || page > 627) return;
+
+      const item = document.createElement('li');
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = `${name} — الصفحة ${page}`;
+      button.addEventListener('click', () => {
+        pageInput.value = String(page);
+        select.value = String(index + 1);
+        if (typeof renderPage === 'function') renderPage(page);
+        message.textContent = `تم طلب الانتقال إلى صفحة ${page} من سورة ${name}.`;
+      });
+      item.appendChild(button);
+      savedList.appendChild(item);
+    });
+  }
+
+  toggle.addEventListener('click', () => {
+    panel.hidden = !panel.hidden;
+    if (!panel.hidden) {
+      fillSelect();
+      message.textContent = 'اختر السورة وأدخل رقم صفحة بدايتها بعد التحقق من المصحف.';
+      panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  });
+
+  search.addEventListener('input', fillSelect);
+  select.addEventListener('change', () => {
+    const page = Number(saved[select.value]);
+    pageInput.value = Number.isInteger(page) ? String(page) : '';
+    const name = surahNames[Number(select.value) - 1];
+    message.textContent = name
+      ? (page ? `الصفحة المحفوظة لسورة ${name}: ${page}` : `لم تحفظ صفحة بداية سورة ${name} بعد.`)
+      : '';
+  });
+
+  saveButton.addEventListener('click', () => {
+    const number = Number(select.value);
+    const page = Number(pageInput.value);
+
+    if (!Number.isInteger(number) || number < 1 || number > surahNames.length) {
+      message.textContent = 'اختر سورة صحيحة أولًا.';
+      return;
+    }
+    if (!Number.isInteger(page) || page < 1 || page > 627) {
+      message.textContent = 'أدخل رقم صفحة صحيحًا من 1 إلى 627.';
+      return;
+    }
+
+    saved[String(number)] = page;
+    localStorage.setItem(storageKey, JSON.stringify(saved));
+    updateSavedList();
+    message.textContent = `حُفظت صفحة ${page} لسورة ${surahNames[number - 1]} على هذا الجهاز.`;
+  });
+
+  openButton.addEventListener('click', () => {
+    const number = Number(select.value);
+    const page = Number(saved[String(number)]);
+    if (!Number.isInteger(page) || page < 1 || page > 627) {
+      message.textContent = 'لا توجد صفحة محفوظة لهذه السورة. أدخل الصفحة الصحيحة واحفظها أولًا.';
+      return;
+    }
+    if (typeof renderPage === 'function') {
+      renderPage(page);
+      message.textContent = `تم طلب الانتقال إلى الصفحة ${page} من سورة ${surahNames[number - 1]}.`;
+    } else {
+      message.textContent = 'ميزة عرض المصحف لم تجهز بعد.';
+    }
+  });
+
+  fillSelect();
 })();

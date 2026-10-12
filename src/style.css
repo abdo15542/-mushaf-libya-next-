@@ -448,3 +448,90 @@ main { padding-top: 18px; }
   min-height: 42px;
 }
 
+
+
+/* SURAH_INDEX_STYLES */
+[hidden] {
+  display: none !important;
+}
+
+#toggleSurahIndex {
+  display: block;
+  width: 100%;
+  margin: 12px 0;
+  padding: 13px 16px;
+  border: 1px solid #c6a75e;
+  border-radius: 12px;
+  background: #145b43;
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+#surahIndexPanel {
+  direction: rtl;
+  text-align: right;
+  margin: 12px 0;
+  padding: 16px;
+  border: 1px solid #d7c38d;
+  border-radius: 16px;
+  background: var(--card, #fff);
+  color: var(--text, #173c30);
+}
+
+#surahIndexPanel h2 {
+  margin-top: 0;
+}
+
+#surahIndexPanel label {
+  display: block;
+  margin: 12px 0 6px;
+  font-weight: 700;
+}
+
+#surahIndexPanel input,
+#surahIndexPanel select {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px;
+  border: 1px solid #b9c9bd;
+  border-radius: 10px;
+  background: var(--input-bg, #fff);
+  color: inherit;
+  font: inherit;
+}
+
+#surahIndexPanel button {
+  max-width: 100%;
+  min-height: 42px;
+  margin: 8px 4px 4px 0;
+  padding: 9px 13px;
+  border: 1px solid #c6a75e;
+  border-radius: 10px;
+  background: #145b43;
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
+}
+
+#surahIndexPanel button:focus-visible,
+#toggleSurahIndex:focus-visible,
+#surahIndexPanel input:focus-visible,
+#surahIndexPanel select:focus-visible {
+  outline: 3px solid #d5ad4e;
+  outline-offset: 2px;
+}
+
+#surahSavedList {
+  padding-right: 20px;
+}
+
+#surahSavedList li {
+  margin: 8px 0;
+}
+
+#surahIndexStatus {
+  line-height: 1.8;
+}

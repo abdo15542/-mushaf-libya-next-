@@ -239,6 +239,12 @@ async function renderPage(number) {
     pageInput.value = pageNumber;
     pageInput.max = pdf.numPages;
     localStorage.setItem('mushaf-page', String(pageNumber));
+
+    const lastPageLabel = document.getElementById('lastPageLabel');
+    if (lastPageLabel) {
+      lastPageLabel.textContent = `آخر موضع محفوظ: الصفحة ${pageNumber}`;
+    }
+
     status.textContent = `الصفحة ${pageNumber} من ${pdf.numPages}`;
   } catch (error) {
     console.error(error);

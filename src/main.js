@@ -298,7 +298,12 @@ pageInput.addEventListener('keydown', event => {
 function getBookmarks() {
   const items = readJSON('mushaf-bookmarks', []);
   return Array.isArray(items)
-    ? items.filter(item => Number.isInteger(item.page))
+    ? items.filter(item =>
+        item &&
+        Number.isInteger(item.page) &&
+        item.page >= 1 &&
+        (!pdf || item.page <= pdf.numPages)
+      )
     : [];
 }
 
@@ -318,8 +323,29 @@ function drawBookmarks() {
   items.forEach(item => {
     const li = document.createElement('li');
     const open = document.createElement('button');
-    open.textContent = `الصفحة ${item.page}`;
+    open.textContent = item.name
+      ? `${item.name} — الصفحة ${item.page}`
+      : `الصفحة ${item.page}`;
     open.addEventListener('click', () => renderPage(item.page));
+
+    const rename = document.createElement('button');
+    rename.textContent = 'تسمية';
+    rename.className = 'secondary';
+    rename.addEventListener('click', () => {
+      const currentName = item.name || `صفحة ${item.page}`;
+      const value = window.prompt('اكتب اسمًا لهذه العلامة:', currentName);
+      if (value === null) return;
+
+      const name = value.trim().slice(0, 80);
+      const updated = getBookmarks().map(x =>
+        x.page === item.page ? { ...x, name } : x
+      );
+      localStorage.setItem('mushaf-bookmarks', JSON.stringify(updated));
+      drawBookmarks();
+      status.textContent = name
+        ? `تم تحديث اسم العلامة: ${name}`
+        : `تمت إزالة اسم العلامة للصفحة ${item.page}.`;
+    });
 
     const remove = document.createElement('button');
     remove.textContent = 'حذف';
@@ -328,23 +354,48 @@ function drawBookmarks() {
       const remaining = getBookmarks().filter(x => x.page !== item.page);
       localStorage.setItem('mushaf-bookmarks', JSON.stringify(remaining));
       drawBookmarks();
+      status.textContent = `تم حذف علامة الصفحة ${item.page}.`;
     });
 
-    li.append(open, remove);
+    li.append(open, rename, remove);
     list.append(li);
   });
 }
 
 $('#bookmark').addEventListener('click', () => {
-  const items = getBookmarks();
-
-  if (!items.some(item => item.page === pageNumber)) {
-    items.push({ page: pageNumber });
-    localStorage.setItem('mushaf-bookmarks', JSON.stringify(items));
+  if (!Number.isInteger(pageNumber) || pageNumber < 1 ||
+      (pdf && pageNumber > pdf.numPages)) {
+    status.textContent = 'تعذر حفظ العلامة: رقم الصفحة غير صحيح.';
+    return;
   }
 
+  const items = getBookmarks();
+  const existing = items.find(item => item.page === pageNumber);
+
+  if (existing) {
+    const value = window.prompt(
+      'هذه الصفحة محفوظة بالفعل. أدخل اسمًا للعلامة:',
+      existing.name || `صفحة ${pageNumber}`
+    );
+    if (value === null) return;
+    existing.name = value.trim().slice(0, 80);
+    localStorage.setItem('mushaf-bookmarks', JSON.stringify(items));
+    drawBookmarks();
+    status.textContent = `تم تحديث علامة الصفحة ${pageNumber}.`;
+    return;
+  }
+
+  const value = window.prompt(
+    'يمكنك تسمية العلامة أو ترك الاسم الافتراضي:',
+    `صفحة ${pageNumber}`
+  );
+  if (value === null) return;
+
+  const name = value.trim().slice(0, 80);
+  items.push({ page: pageNumber, name });
+  localStorage.setItem('mushaf-bookmarks', JSON.stringify(items));
   drawBookmarks();
-  status.textContent = `تم حفظ الصفحة ${pageNumber}`;
+  status.textContent = `تم حفظ العلامة ${name || `للصفحة ${pageNumber}`}.`;
 });
 
 drawBookmarks();

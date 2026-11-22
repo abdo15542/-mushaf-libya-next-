@@ -139,6 +139,7 @@ app.innerHTML = `
         <button id="deleteSavedAudio" type="button">حذف النسخة المحفوظة</button>
       </div>
 
+      <progress id="audioDownloadProgress" class="audio-download-progress" max="100" value="0" aria-label="تقدم تنزيل السورة" hidden></progress>
       <p id="audioStatus" role="status" aria-live="polite">
         اختر سورة للاستماع أو تنزيلها.
       </p>
@@ -603,6 +604,7 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
   const player = $audio('quranAudio');
   const status = $audio('audioStatus');
   const downloadButton = $audio('downloadAudio');
+  const downloadProgress = $audio('audioDownloadProgress');
   const savedButton = $audio('playSavedAudio');
   const deleteButton = $audio('deleteSavedAudio');
 
@@ -748,17 +750,50 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
     if (busy) return;
     busy = true;
     downloadButton.disabled = true;
+    if (downloadProgress) {
+      downloadProgress.hidden = false;
+      downloadProgress.value = 0;
+    }
     status.textContent = `جارٍ تنزيل سورة ${selectedName()}… لا تغلق التطبيق.`;
 
     try {
       const response = await fetch(audioUrl(select.value));
       if (!response.ok) throw new Error(`فشل التنزيل: HTTP ${response.status}`);
 
-      const blob = await response.blob();
+      const total = Number(response.headers.get('content-length')) || 0;
+      const contentType = response.headers.get('content-type') || 'audio/mpeg';
+      const chunks = [];
+      let received = 0;
+
+      if (response.body && response.body.getReader) {
+        const reader = response.body.getReader();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value);
+          received += value.byteLength;
+
+          const downloadedMb = (received / 1024 / 1024).toFixed(1);
+          if (total > 0) {
+            const percent = Math.min(100, Math.round((received / total) * 100));
+            if (downloadProgress) downloadProgress.value = percent;
+            status.textContent = `تنزيل سورة ${selectedName()}… ${percent}% (${downloadedMb} ميغابايت)`;
+          } else {
+            status.textContent = `تنزيل سورة ${selectedName()}… ${downloadedMb} ميغابايت`;
+          }
+        }
+      } else {
+        const fallbackBlob = await response.blob();
+        chunks.push(fallbackBlob);
+        received = fallbackBlob.size;
+      }
+
+      const blob = new Blob(chunks, { type: contentType });
       if (!blob.size || (blob.type && !blob.type.includes('audio'))) {
         throw new Error('الملف المستلم ليس ملفًا صوتيًا صالحًا.');
       }
 
+      if (downloadProgress) downloadProgress.value = 100;
       await saveTrack({
         id: Number(select.value),
         name: selectedName(),
@@ -776,6 +811,10 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
     } finally {
       busy = false;
       downloadButton.disabled = false;
+      if (downloadProgress) {
+        downloadProgress.hidden = true;
+        downloadProgress.value = 0;
+      }
       await refreshAudioButtons();
     }
   });

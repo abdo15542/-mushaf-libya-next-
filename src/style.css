@@ -556,3 +556,29 @@ main { padding-top: 18px; }
   border-color: #e2a45b;
   color: #ffe0b7;
 }
+
+
+/* مؤشر تقدم تنزيل التلاوات */
+.audio-download-progress {
+  display: block;
+  width: 100%;
+  height: 10px;
+  margin: 12px 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 999px;
+  accent-color: var(--gold, #c9a75b);
+  background: var(--border, #d9dfd9);
+}
+.audio-download-progress::-webkit-progress-bar {
+  border-radius: 999px;
+  background: var(--border, #d9dfd9);
+}
+.audio-download-progress::-webkit-progress-value {
+  border-radius: 999px;
+  background: var(--gold, #c9a75b);
+}
+.audio-download-progress::-moz-progress-bar {
+  border-radius: 999px;
+  background: var(--gold, #c9a75b);
+}

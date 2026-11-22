@@ -1,110 +1,76 @@
-
-const CACHE_NAME = 'mushaf-libya-v2';
-
-const APP_SHELL = [
-  '/',
-  '/manifest.webmanifest'
-];
+const CACHE_NAME = 'mushaf-libya-v3';
+const APP_SHELL = ['/', '/manifest.webmanifest'];
 
 self.addEventListener('install', event => {
-  event.waitUntil(
-    (async () => {
-      const cache = await caches.open(CACHE_NAME);
-      await cache.addAll(APP_SHELL);
-      await self.skipWaiting();
-    })()
-  );
+  event.waitUntil((async () => {
+    const cache = await caches.open(CACHE_NAME);
+    await cache.addAll(APP_SHELL);
+    await self.skipWaiting();
+  })());
 });
 
 self.addEventListener('activate', event => {
-  event.waitUntil(
-    (async () => {
-      const keys = await caches.keys();
-
-      await Promise.all(
-        keys
-          .filter(
-            key =>
-              key.startsWith('mushaf-libya-') &&
-              key !== CACHE_NAME
-          )
-          .map(key => caches.delete(key))
-      );
-
-      await self.clients.claim();
-    })()
-  );
+  event.waitUntil((async () => {
+    const keys = await caches.keys();
+    await Promise.all(keys
+      .filter(key => key.startsWith('mushaf-libya-') && key !== CACHE_NAME)
+      .map(key => caches.delete(key)));
+    await self.clients.claim();
+  })());
 });
 
 self.addEventListener('fetch', event => {
   const request = event.request;
   const url = new URL(request.url);
 
-  // تجاهل الطلبات التي لا تخص ملفات التطبيق.
-  if (
-    request.method !== 'GET' ||
-    url.origin !== self.location.origin ||
-    url.pathname.startsWith('/@') ||
-    url.pathname.includes('/node_modules/')
-  ) {
-    return;
-  }
+  if (request.method !== 'GET' ||
+      url.origin !== self.location.origin ||
+      url.pathname.startsWith('/@') ||
+      url.pathname.includes('/node_modules/')) return;
 
-  event.respondWith(
-    (async () => {
-      const cache = await caches.open(CACHE_NAME);
+  const isNavigation = request.mode === 'navigate';
+  const isOfflineCritical = url.pathname === '/assets/mushaf-qalun.pdf';
+  const isStaticAsset = ['script', 'style', 'image', 'font', 'worker'].includes(request.destination);
 
-      try {
-        // الاتصال بالإنترنت أولًا للحصول على أحدث نسخة.
-        const response = await fetch(request);
+  event.respondWith((async () => {
+    const cache = await caches.open(CACHE_NAME);
 
-        // تخزين الردود الكاملة والناجحة فقط.
-        if (
-          response.ok &&
-          response.status === 200 &&
-          response.type === 'basic' &&
-          !response.headers.has('Content-Range')
-        ) {
+    // ملفات التطبيق والمصحف المحفوظة تُعرض فورًا دون انتظار الشبكة.
+    if (!isNavigation && (isStaticAsset || isOfflineCritical)) {
+      const cached = await cache.match(request);
+      if (cached) {
+        event.waitUntil((async () => {
           try {
-            await cache.put(request, response.clone());
-          } catch (cacheError) {
-            // لا نمنع عرض الملف إذا تعذر تخزينه.
-            console.warn(
-              'تعذر تخزين الملف للاستخدام دون إنترنت:',
-              cacheError
-            );
-          }
-        }
-
-        return response;
-      } catch (networkError) {
-        // عند انقطاع الإنترنت، استخدم النسخة المخزنة.
-        const cachedResponse = await cache.match(request);
-
-        if (cachedResponse) {
-          return cachedResponse;
-        }
-
-        // محاولة فتح الصفحة الرئيسية عند انقطاع الإنترنت.
-        if (request.mode === 'navigate') {
-          const home = await cache.match('/');
-
-          if (home) {
-            return home;
-          }
-        }
-
-        // لا توجد نسخة محفوظة لهذا الملف.
-        return new Response(
-          'هذا الملف غير متاح دون إنترنت. اتصل بالإنترنت وافتحه أولًا.',
-          {
-            status: 503,
-            headers: {
-              'Content-Type': 'text/plain; charset=utf-8'
+            const fresh = await fetch(request);
+            if (fresh.ok && fresh.status === 200 && fresh.type === 'basic' &&
+                !fresh.headers.has('Content-Range')) {
+              await cache.put(request, fresh.clone());
             }
-          }
-        );
+          } catch { /* النسخة المحلية تكفي عند انقطاع الشبكة. */ }
+        })());
+        return cached;
       }
-    })()
-  );
+    }
+
+    try {
+      const response = await fetch(request);
+      if (response.ok && response.status === 200 &&
+          response.type === 'basic' && !response.headers.has('Content-Range')) {
+        try { await cache.put(request, response.clone()); }
+        catch (error) { console.warn('تعذر حفظ الملف دون إنترنت:', error); }
+      }
+      return response;
+    } catch {
+      const cached = await cache.match(request);
+      if (cached) return cached;
+      if (isNavigation) {
+        const home = await cache.match('/');
+        if (home) return home;
+      }
+      return new Response(
+        'هذا الملف غير محفوظ على الجهاز بعد. اتصل بالإنترنت وافتحه مرة واحدة لتنزيله.',
+        { status: 503, headers: { 'Content-Type': 'text/plain; charset=utf-8' } }
+      );
+    }
+  })());
 });

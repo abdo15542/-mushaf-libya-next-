@@ -3,6 +3,7 @@ import * as pdfjs from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import './style.css';
 import { surahNames } from './surah-index.js';
+import { getSurahMetadata } from './surah-metadata.js';
 import { connectionStatusText } from './offline-status.js';
 import { isValidMp3Blob } from './audio-utils.js';
 
@@ -75,6 +76,7 @@ app.innerHTML = `
       <input id="surahSearch" type="search" placeholder="اسم السورة">
       <label for="surahSelect">اختر السورة</label>
       <select id="surahSelect"></select>
+      <p id="surahMetadataInfo" class="audio-muted" aria-live="polite"></p>
       <label for="surahPage">صفحة بداية السورة</label>
       <input id="surahPage" type="number" min="1" max="627" placeholder="رقم الصفحة بعد التحقق">
       <button id="saveSurahPage" type="button">حفظ بداية السورة</button>
@@ -309,6 +311,132 @@ $('#go').addEventListener('click', () => {
 pageInput.addEventListener('keydown', event => {
   if (event.key === 'Enter') $('#go').click();
 });
+
+
+// فهرس السور المحلي: بيانات عدد الآيات مستقلة عن ملف صفحات المصحف.
+const surahSelect = $('#surahSelect');
+const surahSearch = $('#surahSearch');
+const surahPageInput = $('#surahPage');
+const surahIndexStatus = $('#surahIndexStatus');
+const surahMetadataInfo = $('#surahMetadataInfo');
+const surahSavedList = $('#surahSavedList');
+const SURAH_PAGE_MAP_KEY = 'mushaf-surah-page-map-v1';
+
+function getSurahPageMap() {
+  const value = readJSON(SURAH_PAGE_MAP_KEY, {});
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
+function fillSurahOptions(filter = '') {
+  const query = normalizeArabic(filter);
+  const selected = surahSelect.value;
+  surahSelect.replaceChildren();
+  surahNames.forEach((name, index) => {
+    const number = index + 1;
+    if (query && !normalizeArabic(name).includes(query) && !String(number).includes(query)) return;
+    const option = document.createElement('option');
+    option.value = String(number);
+    option.textContent = `${number}. سورة ${name}`;
+    surahSelect.append(option);
+  });
+  if ([...surahSelect.options].some(option => option.value === selected)) {
+    surahSelect.value = selected;
+  }
+  updateSelectedSurahMetadata();
+}
+
+function updateSelectedSurahMetadata() {
+  const metadata = getSurahMetadata(surahSelect.value);
+  if (!metadata) {
+    surahMetadataInfo.textContent = 'لا توجد سورة مطابقة للبحث.';
+    return;
+  }
+  const savedPage = getSurahPageMap()[metadata.number];
+  surahMetadataInfo.textContent = `سورة ${metadata.name} · ${metadata.ayahCount} آية · ${savedPage ? `صفحة البداية المحفوظة: ${savedPage}` : 'لم تُحدّد صفحة بدايتها بعد'}.`;
+  surahPageInput.value = savedPage || '';
+}
+
+function drawSurahPageMap() {
+  const pageMap = getSurahPageMap();
+  surahSavedList.replaceChildren();
+  const entries = Object.entries(pageMap)
+    .map(([number, page]) => ({ number: Number(number), page: Number(page) }))
+    .filter(item => Number.isInteger(item.number) && item.number >= 1 && item.number <= 114 && Number.isInteger(item.page) && item.page >= 1)
+    .sort((a, b) => a.number - b.number);
+  if (!entries.length) {
+    const empty = document.createElement('li');
+    empty.textContent = 'لم تُحفظ صفحات بداية السور بعد. أدخل رقم الصفحة بعد مطابقته مع نسخة المصحف الموجودة.';
+    surahSavedList.append(empty);
+    return;
+  }
+  entries.forEach(item => {
+    const li = document.createElement('li');
+    const open = document.createElement('button');
+    open.type = 'button';
+    open.textContent = `${item.number}. سورة ${surahNames[item.number - 1]} — الصفحة ${item.page}`;
+    open.addEventListener('click', () => {
+      showView('readerView');
+      renderPage(item.page);
+    });
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'secondary';
+    remove.textContent = 'حذف';
+    remove.addEventListener('click', () => {
+      const updated = getSurahPageMap();
+      delete updated[item.number];
+      localStorage.setItem(SURAH_PAGE_MAP_KEY, JSON.stringify(updated));
+      drawSurahPageMap();
+      updateSelectedSurahMetadata();
+      surahIndexStatus.textContent = `حُذفت صفحة بداية سورة ${surahNames[item.number - 1]} من الفهرس المحفوظ.`;
+    });
+    li.append(open, remove);
+    surahSavedList.append(li);
+  });
+}
+
+$('#toggleSurahIndex').addEventListener('click', () => {
+  const panel = $('#surahIndexPanel');
+  panel.hidden = !panel.hidden;
+  if (!panel.hidden) {
+    fillSurahOptions(surahSearch.value);
+    drawSurahPageMap();
+  }
+});
+surahSearch.addEventListener('input', () => fillSurahOptions(surahSearch.value));
+surahSelect.addEventListener('change', updateSelectedSurahMetadata);
+$('#saveSurahPage').addEventListener('click', () => {
+  const number = Number(surahSelect.value);
+  const page = Number(surahPageInput.value);
+  if (!getSurahMetadata(number)) {
+    surahIndexStatus.textContent = 'اختر سورة صحيحة أولًا.';
+    return;
+  }
+  if (!Number.isInteger(page) || page < 1 || (pdf && page > pdf.numPages)) {
+    surahIndexStatus.textContent = pdf
+      ? `أدخل رقم صفحة بين 1 و${pdf.numPages}.`
+      : 'أدخل رقم صفحة صحيحًا بعد التأكد منه في نسخة المصحف.';
+    return;
+  }
+  const map = getSurahPageMap();
+  map[number] = page;
+  localStorage.setItem(SURAH_PAGE_MAP_KEY, JSON.stringify(map));
+  drawSurahPageMap();
+  updateSelectedSurahMetadata();
+  surahIndexStatus.textContent = `تم حفظ صفحة بداية سورة ${surahNames[number - 1]}. راجع مطابقة الصفحة مع ملف المصحف.`;
+});
+$('#openSurahPage').addEventListener('click', () => {
+  const number = Number(surahSelect.value);
+  const page = getSurahPageMap()[number];
+  if (!page) {
+    surahIndexStatus.textContent = 'لم تُحفظ صفحة بداية هذه السورة بعد.';
+    return;
+  }
+  showView('readerView');
+  renderPage(page);
+});
+fillSurahOptions();
+drawSurahPageMap();
 
 // العلامات المرجعية المتعددة
 function getBookmarks() {

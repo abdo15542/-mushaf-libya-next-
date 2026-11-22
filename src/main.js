@@ -679,6 +679,31 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
     });
   }
 
+  async function getAllTracks() {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const request = db.transaction(STORE, 'readonly')
+        .objectStore(STORE).getAll();
+      request.onsuccess = () => resolve(request.result || []);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  async function updateAudioStorageInfo() {
+    const el = $audio('audioStorageInfo');
+    if (!el) return;
+    try {
+      const tracks = await getAllTracks();
+      const bytes = tracks.reduce((sum, track) => sum + (Number(track.size) || track.blob?.size || 0), 0);
+      const mb = (bytes / 1024 / 1024).toFixed(1);
+      el.textContent = tracks.length
+        ? `السور المحفوظة: ${tracks.length} من 114 · المساحة الصوتية المستخدمة: ${mb} ميغابايت.`
+        : 'لا توجد سور محفوظة للاستماع دون إنترنت.';
+    } catch {
+      el.textContent = 'تعذر قراءة معلومات التخزين المحلي.';
+    }
+  }
+
   async function saveTrack(track) {
     const db = await openDB();
     return new Promise((resolve, reject) => {
@@ -734,6 +759,30 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
   });
 
   $audio('streamAudio').addEventListener('click', async () => {
+    if (!navigator.onLine) {
+      try {
+        const track = await getTrack(select.value);
+        if (!track) {
+          status.textContent = 'أنت غير متصل بالإنترنت وهذه السورة غير محفوظة. اتصل بالإنترنت لتنزيلها أولًا.';
+          return;
+        }
+        releaseObjectUrl();
+        currentObjectUrl = URL.createObjectURL(track.blob);
+        player.src = currentObjectUrl;
+        player.load();
+        status.textContent = `لا يوجد اتصال. تشغيل سورة ${track.name} من النسخة المحفوظة على الجهاز.`;
+        try {
+          await player.play();
+        } catch {
+          status.textContent = 'السورة محفوظة. اضغط زر التشغيل داخل مشغل الصوت.';
+        }
+        return;
+      } catch (error) {
+        status.textContent = error.message || 'تعذر الوصول إلى النسخة المحفوظة.';
+        return;
+      }
+    }
+
     releaseObjectUrl();
     player.src = audioUrl(select.value);
     player.load();
@@ -804,6 +853,7 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
 
       const mb = (blob.size / 1024 / 1024).toFixed(2);
       status.textContent = `تم حفظ سورة ${selectedName()} للاستماع دون إنترنت (${mb} ميغابايت).`;
+      await updateAudioStorageInfo();
     } catch (error) {
       console.error('Audio download failed:', error);
       status.textContent =
@@ -852,6 +902,7 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
       }
       status.textContent = `حُذفت النسخة المحفوظة من سورة ${selectedName()}.`;
       await refreshAudioButtons();
+      await updateAudioStorageInfo();
     } catch (error) {
       status.textContent = error.message || 'تعذر حذف النسخة المحفوظة.';
     }
@@ -875,6 +926,7 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
   }
 
   refreshAudioButtons();
+  updateAudioStorageInfo();
 })();
 
 

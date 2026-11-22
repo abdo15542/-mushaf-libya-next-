@@ -535,3 +535,24 @@ main { padding-top: 18px; }
 #surahIndexStatus {
   line-height: 1.8;
 }
+
+
+/* مؤشر حالة الاتصال */
+.connection-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  max-width: calc(100% - 24px);
+  margin: 8px auto 0;
+  padding: 5px 12px;
+  border: 1px solid #d8b56b66;
+  border-radius: 999px;
+  color: #f7e8c5;
+  background: #071c1688;
+  font-size: .82rem;
+}
+.connection-status[data-state="offline"] {
+  border-color: #e2a45b;
+  color: #ffe0b7;
+}

@@ -4,6 +4,7 @@ import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import './style.css';
 import { surahNames } from './surah-index.js';
 import { connectionStatusText } from './offline-status.js';
+import { isValidMp3Blob } from './audio-utils.js';
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 
@@ -838,8 +839,8 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
       }
 
       const blob = new Blob(chunks, { type: contentType });
-      if (!blob.size || (blob.type && !blob.type.includes('audio'))) {
-        throw new Error('الملف المستلم ليس ملفًا صوتيًا صالحًا.');
+      if (!(await isValidMp3Blob(blob))) {
+        throw new Error('الملف المستلم لا يبدو ملف MP3 صالحًا؛ لم يتم حفظه.');
       }
 
       if (downloadProgress) downloadProgress.value = 100;

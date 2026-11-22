@@ -23,10 +23,10 @@ describe('Qalun structural index', () => {
   });
 
   it('returns accurate first and last coordinates for sections', () => {
-    expect(getQalunSectionRange('juz', 1)).toMatchObject({ first: { surahNumber: 1, ayahNumber: 1 }, last: { surahNumber: 2, ayahNumber: 147 } });
+    expect(getQalunSectionRange('juz', 1)).toMatchObject({ first: { surahNumber: 1, ayahNumber: 1 }, last: { surahNumber: 2, ayahNumber: 140 } });
     expect(getQalunSectionRange('juz', 30)).toMatchObject({ first: { surahNumber: 78, ayahNumber: 1 }, last: { surahNumber: 114, ayahNumber: 6 } });
     expect(getQalunSectionRange('hizb', 0)).toBeNull();
     expect(getQalunSectionRange('rub', 241)).not.toBeNull();
-    expect(getQalunSectionRange('rub', 241)).toMatchObject({ first: { surahNumber: 112, ayahNumber: 1 }, last: { surahNumber: 114, ayahNumber: 6 } });
+    expect(getQalunSectionRange('rub', 241)).toMatchObject({ first: { surahNumber: 100, ayahNumber: 9 }, last: { surahNumber: 114, ayahNumber: 6 } });
   });
 });

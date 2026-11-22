@@ -4,6 +4,7 @@ import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import './style.css';
 import { surahNames } from './surah-index.js';
 import { getSurahMetadata, QALUN_TOTAL_AYAHS } from './surah-metadata.js';
+import { getQalunSectionRange } from './qalun-structure.js';
 import { connectionStatusText } from './offline-status.js';
 import { isValidMp3Blob } from './audio-utils.js';
 
@@ -78,6 +79,17 @@ app.innerHTML = `
       <label for="surahSelect">اختر السورة</label>
       <select id="surahSelect"></select>
       <p id="surahMetadataInfo" class="audio-muted" aria-live="polite"></p>
+      <section class="quran-structure-index" aria-labelledby="structureIndexTitle">
+        <h3 id="structureIndexTitle">الأجزاء والأحزاب وأرباع الحزب</h3>
+        <label for="juzSelect">الجزء</label>
+        <select id="juzSelect"></select>
+        <label for="hizbSelect">الحزب</label>
+        <select id="hizbSelect"></select>
+        <label for="rubSelect">ربع الحزب</label>
+        <select id="rubSelect"></select>
+        <p id="structureRangeInfo" class="audio-muted" aria-live="polite">اختر جزءًا أو حزبًا أو ربع حزب لعرض نطاقه.</p>
+        <button id="openStructureSurahPage" type="button" disabled>فتح صفحة بداية السورة المحفوظة</button>
+      </section>
       <label for="surahPage">صفحة بداية السورة</label>
       <input id="surahPage" type="number" min="1" max="627" placeholder="رقم الصفحة بعد التحقق">
       <button id="saveSurahPage" type="button">حفظ بداية السورة</button>
@@ -439,6 +451,53 @@ $('#openSurahPage').addEventListener('click', () => {
 fillSurahOptions();
 drawSurahPageMap();
 
+// فهرس الأجزاء والأحزاب وأرباع الحزب وفق بيانات قالون.
+const structureRangeInfo = $('#structureRangeInfo');
+const structureOpenButton = $('#openStructureSurahPage');
+let selectedStructureRange = null;
+
+function fillStructureSelect(id, count, prefix) {
+  const select = $(id);
+  for (let number = 1; number <= count; number += 1) {
+    const option = document.createElement('option');
+    option.value = String(number);
+    option.textContent = prefix + ' ' + number;
+    select.append(option);
+  }
+}
+
+function coordinateLabel(position) {
+  return 'سورة ' + position.surahName + '، الآية ' + position.ayahNumber;
+}
+
+function updateStructureRange(type, number) {
+  const range = getQalunSectionRange(type, number);
+  selectedStructureRange = range;
+  if (!range) {
+    structureRangeInfo.textContent = 'تعذر تحديد هذا النطاق من بيانات الفهرس.';
+    structureOpenButton.disabled = true;
+    return;
+  }
+  const page = getSurahPageMap()[range.first.surahNumber];
+  structureRangeInfo.textContent = range.label + ' ' + range.number + ': من ' + coordinateLabel(range.first) + ' إلى ' + coordinateLabel(range.last) + '.' + (page ? ' صفحة بداية السورة المحفوظة: ' + page + '.' : ' لم تُحفظ صفحة بداية هذه السورة بعد.');
+  structureOpenButton.disabled = !page;
+}
+
+fillStructureSelect('#juzSelect', 30, 'الجزء');
+fillStructureSelect('#hizbSelect', 60, 'الحزب');
+fillStructureSelect('#rubSelect', 240, 'ربع الحزب');
+$('#juzSelect').addEventListener('change', event => updateStructureRange('juz', event.target.value));
+$('#hizbSelect').addEventListener('change', event => updateStructureRange('hizb', event.target.value));
+$('#rubSelect').addEventListener('change', event => updateStructureRange('rub', event.target.value));
+structureOpenButton.addEventListener('click', () => {
+  if (!selectedStructureRange) return;
+  const page = getSurahPageMap()[selectedStructureRange.first.surahNumber];
+  if (!page) return;
+  showView('readerView');
+  renderPage(page);
+  surahIndexStatus.textContent = 'تم فتح صفحة بداية السورة المرتبطة بالنطاق. موضع الآية الدقيق يحتاج إلى خريطة صفحات مطابقة للمصحف.';
+});
+updateStructureRange('juz', 1);
 // العلامات المرجعية المتعددة
 function getBookmarks() {
   const items = readJSON('mushaf-bookmarks', []);

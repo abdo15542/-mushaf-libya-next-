@@ -637,6 +637,7 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
   const STORE = 'tracks';
   let dbPromise;
   let currentObjectUrl = null;
+  let currentObjectTrackId = null;
   let busy = false;
 
   surahs.forEach((name, index) => {
@@ -730,6 +731,7 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
     if (currentObjectUrl) {
       URL.revokeObjectURL(currentObjectUrl);
       currentObjectUrl = null;
+      currentObjectTrackId = null;
     }
   }
 
@@ -769,6 +771,7 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
         }
         releaseObjectUrl();
         currentObjectUrl = URL.createObjectURL(track.blob);
+        currentObjectTrackId = Number(track.id);
         player.src = currentObjectUrl;
         player.load();
         status.textContent = `لا يوجد اتصال. تشغيل سورة ${track.name} من النسخة المحفوظة على الجهاز.`;
@@ -799,15 +802,18 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
   downloadButton.addEventListener('click', async () => {
     if (busy) return;
     busy = true;
+    const downloadId = Number(select.value);
+    const downloadName = selectedName();
     downloadButton.disabled = true;
+    select.disabled = true;
     if (downloadProgress) {
       downloadProgress.hidden = false;
       downloadProgress.value = 0;
     }
-    status.textContent = `جارٍ تنزيل سورة ${selectedName()}… لا تغلق التطبيق.`;
+    status.textContent = `جارٍ تنزيل سورة ${downloadName}… لا تغلق التطبيق.`;
 
     try {
-      const response = await fetch(audioUrl(select.value));
+      const response = await fetch(audioUrl(downloadId));
       if (!response.ok) throw new Error(`فشل التنزيل: HTTP ${response.status}`);
 
       const total = Number(response.headers.get('content-length')) || 0;
@@ -827,9 +833,9 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
           if (total > 0) {
             const percent = Math.min(100, Math.round((received / total) * 100));
             if (downloadProgress) downloadProgress.value = percent;
-            status.textContent = `تنزيل سورة ${selectedName()}… ${percent}% (${downloadedMb} ميغابايت)`;
+            status.textContent = `تنزيل سورة ${downloadName}… ${percent}% (${downloadedMb} ميغابايت)`;
           } else {
-            status.textContent = `تنزيل سورة ${selectedName()}… ${downloadedMb} ميغابايت`;
+            status.textContent = `تنزيل سورة ${downloadName}… ${downloadedMb} ميغابايت`;
           }
         }
       } else {
@@ -845,15 +851,15 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
 
       if (downloadProgress) downloadProgress.value = 100;
       await saveTrack({
-        id: Number(select.value),
-        name: selectedName(),
+        id: downloadId,
+        name: downloadName,
         blob,
         size: blob.size,
         savedAt: Date.now()
       });
 
       const mb = (blob.size / 1024 / 1024).toFixed(2);
-      status.textContent = `تم حفظ سورة ${selectedName()} للاستماع دون إنترنت (${mb} ميغابايت).`;
+      status.textContent = `تم حفظ سورة ${downloadName} للاستماع دون إنترنت (${mb} ميغابايت).`;
       await updateAudioStorageInfo();
     } catch (error) {
       console.error('Audio download failed:', error);
@@ -862,6 +868,7 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
     } finally {
       busy = false;
       downloadButton.disabled = false;
+      select.disabled = false;
       if (downloadProgress) {
         downloadProgress.hidden = true;
         downloadProgress.value = 0;
@@ -879,6 +886,7 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
       }
       releaseObjectUrl();
       currentObjectUrl = URL.createObjectURL(track.blob);
+      currentObjectTrackId = Number(track.id);
       player.src = currentObjectUrl;
       player.load();
       status.textContent = `تشغيل سورة ${track.name} من النسخة المحفوظة على الجهاز.`;
@@ -895,7 +903,7 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
   deleteButton.addEventListener('click', async () => {
     try {
       await removeTrack(select.value);
-      if (currentObjectUrl) {
+      if (currentObjectUrl && currentObjectTrackId === Number(select.value)) {
         player.pause();
         player.removeAttribute('src');
         player.load();

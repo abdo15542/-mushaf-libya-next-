@@ -38,9 +38,18 @@ android {
         }
     }
 
-    buildTypes {
+    def hasReleaseSigning = [
+    'KEYSTORE_FILE',
+    'KEYSTORE_PASSWORD',
+    'KEY_ALIAS',
+    'KEY_PASSWORD'
+].every { System.getenv(it)?.trim() }
+
+buildTypes {
         release {
-            signingConfig signingConfigs.release
+            if (hasReleaseSigning) {
+                signingConfig signingConfigs.release
+            }
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }

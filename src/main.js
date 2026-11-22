@@ -3,6 +3,10 @@ import * as pdfjs from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import './style.css';
 import { surahNames } from './surah-index.js';
+import { getSurahMetadata, QALUN_TOTAL_AYAHS } from './surah-metadata.js';
+import { getQalunSectionRange } from './qalun-structure.js';
+import { connectionStatusText } from './offline-status.js';
+import { isValidMp3Blob } from './audio-utils.js';
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 
@@ -14,6 +18,7 @@ app.innerHTML = `
     <div class="brand">مصحف ليبيا</div>
     <div class="subtitle">المصحف التفاعلي · رواية قالون عن نافع</div>
     <button id="themeToggle" type="button" aria-label="تغيير المظهر">☼ المظهر</button>
+    <p id="connectionStatus" class="connection-status" role="status" aria-live="polite"></p>
   </header>
 
   <nav class="bottom-nav" aria-label="التنقل الرئيسي">
@@ -68,10 +73,23 @@ app.innerHTML = `
     <button id="toggleSurahIndex" type="button">📖 فهرس السور</button>
     <section id="surahIndexPanel" hidden>
       <h2>فهرس السور</h2>
+      <p class="audio-muted">114 سورة · 6214 آية · العد المدني الأخير المعتمد في فهرس قالون.</p>
       <label for="surahSearch">ابحث عن سورة</label>
       <input id="surahSearch" type="search" placeholder="اسم السورة">
       <label for="surahSelect">اختر السورة</label>
       <select id="surahSelect"></select>
+      <p id="surahMetadataInfo" class="audio-muted" aria-live="polite"></p>
+      <section class="quran-structure-index" aria-labelledby="structureIndexTitle">
+        <h3 id="structureIndexTitle">الأجزاء والأحزاب وأرباع الحزب</h3>
+        <label for="juzSelect">الجزء</label>
+        <select id="juzSelect"></select>
+        <label for="hizbSelect">الحزب</label>
+        <select id="hizbSelect"></select>
+        <label for="rubSelect">ربع الحزب</label>
+        <select id="rubSelect"></select>
+        <p id="structureRangeInfo" class="audio-muted" aria-live="polite">اختر جزءًا أو حزبًا أو ربع حزب لعرض نطاقه.</p>
+        <button id="openStructureSurahPage" type="button" disabled>فتح صفحة بداية السورة المحفوظة</button>
+      </section>
       <label for="surahPage">صفحة بداية السورة</label>
       <input id="surahPage" type="number" min="1" max="627" placeholder="رقم الصفحة بعد التحقق">
       <button id="saveSurahPage" type="button">حفظ بداية السورة</button>
@@ -137,6 +155,7 @@ app.innerHTML = `
         <button id="deleteSavedAudio" type="button">حذف النسخة المحفوظة</button>
       </div>
 
+      <progress id="audioDownloadProgress" class="audio-download-progress" max="100" value="0" aria-label="تقدم تنزيل السورة" hidden></progress>
       <p id="audioStatus" role="status" aria-live="polite">
         اختر سورة للاستماع أو تنزيلها.
       </p>
@@ -182,6 +201,18 @@ document.getElementById('continueReading')?.addEventListener('click', () => {
 });
 
 showView('homeView');
+
+// بيان حالة الاتصال بوضوح؛ لا يمنع ذلك استخدام الملفات المحفوظة محليًا.
+function updateConnectionStatus() {
+  const indicator = document.getElementById('connectionStatus');
+  if (!indicator) return;
+  const online = navigator.onLine;
+  indicator.textContent = connectionStatusText(online);
+  indicator.dataset.state = online ? 'online' : 'offline';
+}
+window.addEventListener('online', updateConnectionStatus);
+window.addEventListener('offline', updateConnectionStatus);
+updateConnectionStatus();
 
 const canvas = $('#pageCanvas');
 const ctx = canvas.getContext('2d');
@@ -294,6 +325,179 @@ pageInput.addEventListener('keydown', event => {
   if (event.key === 'Enter') $('#go').click();
 });
 
+
+// فهرس السور المحلي: بيانات عدد الآيات مستقلة عن ملف صفحات المصحف.
+const surahSelect = $('#surahSelect');
+const surahSearch = $('#surahSearch');
+const surahPageInput = $('#surahPage');
+const surahIndexStatus = $('#surahIndexStatus');
+const surahMetadataInfo = $('#surahMetadataInfo');
+const surahSavedList = $('#surahSavedList');
+const SURAH_PAGE_MAP_KEY = 'mushaf-surah-page-map-v1';
+
+function getSurahPageMap() {
+  const value = readJSON(SURAH_PAGE_MAP_KEY, {});
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
+function fillSurahOptions(filter = '') {
+  const query = normalizeArabic(filter);
+  const selected = surahSelect.value;
+  surahSelect.replaceChildren();
+  surahNames.forEach((name, index) => {
+    const number = index + 1;
+    if (query && !normalizeArabic(name).includes(query) && !String(number).includes(query)) return;
+    const option = document.createElement('option');
+    option.value = String(number);
+    option.textContent = `${number}. سورة ${name}`;
+    surahSelect.append(option);
+  });
+  if ([...surahSelect.options].some(option => option.value === selected)) {
+    surahSelect.value = selected;
+  }
+  updateSelectedSurahMetadata();
+}
+
+function updateSelectedSurahMetadata() {
+  const metadata = getSurahMetadata(surahSelect.value);
+  if (!metadata) {
+    surahMetadataInfo.textContent = 'لا توجد سورة مطابقة للبحث.';
+    return;
+  }
+  const savedPage = getSurahPageMap()[metadata.number];
+  surahMetadataInfo.textContent = `سورة ${metadata.name} · ${metadata.ayahCount} آية · ${metadata.numbering} · إجمالي المصحف ${QALUN_TOTAL_AYAHS} آية · ${savedPage ? `صفحة البداية المحفوظة: ${savedPage}` : 'لم تُحدّد صفحة بدايتها بعد'}.`;
+  surahPageInput.value = savedPage || '';
+}
+
+function drawSurahPageMap() {
+  const pageMap = getSurahPageMap();
+  surahSavedList.replaceChildren();
+  const entries = Object.entries(pageMap)
+    .map(([number, page]) => ({ number: Number(number), page: Number(page) }))
+    .filter(item => Number.isInteger(item.number) && item.number >= 1 && item.number <= 114 && Number.isInteger(item.page) && item.page >= 1)
+    .sort((a, b) => a.number - b.number);
+  if (!entries.length) {
+    const empty = document.createElement('li');
+    empty.textContent = 'لم تُحفظ صفحات بداية السور بعد. أدخل رقم الصفحة بعد مطابقته مع نسخة المصحف الموجودة.';
+    surahSavedList.append(empty);
+    return;
+  }
+  entries.forEach(item => {
+    const li = document.createElement('li');
+    const open = document.createElement('button');
+    open.type = 'button';
+    open.textContent = `${item.number}. سورة ${surahNames[item.number - 1]} — الصفحة ${item.page}`;
+    open.addEventListener('click', () => {
+      showView('readerView');
+      renderPage(item.page);
+    });
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'secondary';
+    remove.textContent = 'حذف';
+    remove.addEventListener('click', () => {
+      const updated = getSurahPageMap();
+      delete updated[item.number];
+      localStorage.setItem(SURAH_PAGE_MAP_KEY, JSON.stringify(updated));
+      drawSurahPageMap();
+      updateSelectedSurahMetadata();
+      surahIndexStatus.textContent = `حُذفت صفحة بداية سورة ${surahNames[item.number - 1]} من الفهرس المحفوظ.`;
+    });
+    li.append(open, remove);
+    surahSavedList.append(li);
+  });
+}
+
+$('#toggleSurahIndex').addEventListener('click', () => {
+  const panel = $('#surahIndexPanel');
+  panel.hidden = !panel.hidden;
+  if (!panel.hidden) {
+    fillSurahOptions(surahSearch.value);
+    drawSurahPageMap();
+  }
+});
+surahSearch.addEventListener('input', () => fillSurahOptions(surahSearch.value));
+surahSelect.addEventListener('change', updateSelectedSurahMetadata);
+$('#saveSurahPage').addEventListener('click', () => {
+  const number = Number(surahSelect.value);
+  const page = Number(surahPageInput.value);
+  if (!getSurahMetadata(number)) {
+    surahIndexStatus.textContent = 'اختر سورة صحيحة أولًا.';
+    return;
+  }
+  if (!Number.isInteger(page) || page < 1 || (pdf && page > pdf.numPages)) {
+    surahIndexStatus.textContent = pdf
+      ? `أدخل رقم صفحة بين 1 و${pdf.numPages}.`
+      : 'أدخل رقم صفحة صحيحًا بعد التأكد منه في نسخة المصحف.';
+    return;
+  }
+  const map = getSurahPageMap();
+  map[number] = page;
+  localStorage.setItem(SURAH_PAGE_MAP_KEY, JSON.stringify(map));
+  drawSurahPageMap();
+  updateSelectedSurahMetadata();
+  surahIndexStatus.textContent = `تم حفظ صفحة بداية سورة ${surahNames[number - 1]}. راجع مطابقة الصفحة مع ملف المصحف.`;
+});
+$('#openSurahPage').addEventListener('click', () => {
+  const number = Number(surahSelect.value);
+  const page = getSurahPageMap()[number];
+  if (!page) {
+    surahIndexStatus.textContent = 'لم تُحفظ صفحة بداية هذه السورة بعد.';
+    return;
+  }
+  showView('readerView');
+  renderPage(page);
+});
+fillSurahOptions();
+drawSurahPageMap();
+
+// فهرس الأجزاء والأحزاب وأرباع الحزب وفق بيانات قالون.
+const structureRangeInfo = $('#structureRangeInfo');
+const structureOpenButton = $('#openStructureSurahPage');
+let selectedStructureRange = null;
+
+function fillStructureSelect(id, count, prefix) {
+  const select = $(id);
+  for (let number = 1; number <= count; number += 1) {
+    const option = document.createElement('option');
+    option.value = String(number);
+    option.textContent = prefix + ' ' + number;
+    select.append(option);
+  }
+}
+
+function coordinateLabel(position) {
+  return 'سورة ' + position.surahName + '، الآية ' + position.ayahNumber;
+}
+
+function updateStructureRange(type, number) {
+  const range = getQalunSectionRange(type, number);
+  selectedStructureRange = range;
+  if (!range) {
+    structureRangeInfo.textContent = 'تعذر تحديد هذا النطاق من بيانات الفهرس.';
+    structureOpenButton.disabled = true;
+    return;
+  }
+  const page = getSurahPageMap()[range.first.surahNumber];
+  structureRangeInfo.textContent = range.label + ' ' + range.number + ': من ' + coordinateLabel(range.first) + ' إلى ' + coordinateLabel(range.last) + '.' + (page ? ' صفحة بداية السورة المحفوظة: ' + page + '.' : ' لم تُحفظ صفحة بداية هذه السورة بعد.');
+  structureOpenButton.disabled = !page;
+}
+
+fillStructureSelect('#juzSelect', 30, 'الجزء');
+fillStructureSelect('#hizbSelect', 60, 'الحزب');
+fillStructureSelect('#rubSelect', 240, 'ربع الحزب');
+$('#juzSelect').addEventListener('change', event => updateStructureRange('juz', event.target.value));
+$('#hizbSelect').addEventListener('change', event => updateStructureRange('hizb', event.target.value));
+$('#rubSelect').addEventListener('change', event => updateStructureRange('rub', event.target.value));
+structureOpenButton.addEventListener('click', () => {
+  if (!selectedStructureRange) return;
+  const page = getSurahPageMap()[selectedStructureRange.first.surahNumber];
+  if (!page) return;
+  showView('readerView');
+  renderPage(page);
+  surahIndexStatus.textContent = 'تم فتح صفحة بداية السورة المرتبطة بالنطاق. موضع الآية الدقيق يحتاج إلى خريطة صفحات مطابقة للمصحف.';
+});
+updateStructureRange('juz', 1);
 // العلامات المرجعية المتعددة
 function getBookmarks() {
   const items = readJSON('mushaf-bookmarks', []);
@@ -557,7 +761,11 @@ $('#searchForm').addEventListener('submit', async event => {
     const response = await fetch('/assets/mushaf-qalun.pdf');
 
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status} عند تحميل المصحف`);
+      throw new Error(
+        response.status === 404
+          ? 'ملف المصحف غير موجود ضمن ملفات التطبيق. يلزم تضمين ملف mushaf-qalun.pdf في حزمة البناء.'
+          : `HTTP ${response.status} عند تحميل المصحف`
+      );
     }
 
     const data = new Uint8Array(await response.arrayBuffer());
@@ -565,7 +773,7 @@ $('#searchForm').addEventListener('submit', async event => {
     await renderPage(pageNumber);
   } catch (error) {
     console.error(error);
-    status.textContent = `فشل تحميل المصحف: ${error.message || error}`;
+    status.textContent = `تعذر تحميل المصحف: ${error.message || error}. ${navigator.onLine ? 'تحقق من وجود ملف المصحف في حزمة التطبيق.' : 'اتصل بالإنترنت مرة واحدة لتنزيل ملفات التطبيق ثم أعد المحاولة.'}`;
   }
 })();
 
@@ -585,6 +793,7 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
   const player = $audio('quranAudio');
   const status = $audio('audioStatus');
   const downloadButton = $audio('downloadAudio');
+  const downloadProgress = $audio('audioDownloadProgress');
   const savedButton = $audio('playSavedAudio');
   const deleteButton = $audio('deleteSavedAudio');
 
@@ -616,6 +825,7 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
   const STORE = 'tracks';
   let dbPromise;
   let currentObjectUrl = null;
+  let currentObjectTrackId = null;
   let busy = false;
 
   surahs.forEach((name, index) => {
@@ -659,6 +869,31 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
     });
   }
 
+  async function getAllTracks() {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const request = db.transaction(STORE, 'readonly')
+        .objectStore(STORE).getAll();
+      request.onsuccess = () => resolve(request.result || []);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  async function updateAudioStorageInfo() {
+    const el = $audio('audioStorageInfo');
+    if (!el) return;
+    try {
+      const tracks = await getAllTracks();
+      const bytes = tracks.reduce((sum, track) => sum + (Number(track.size) || track.blob?.size || 0), 0);
+      const mb = (bytes / 1024 / 1024).toFixed(1);
+      el.textContent = tracks.length
+        ? `السور المحفوظة: ${tracks.length} من 114 · المساحة الصوتية المستخدمة: ${mb} ميغابايت.`
+        : 'لا توجد سور محفوظة للاستماع دون إنترنت.';
+    } catch {
+      el.textContent = 'تعذر قراءة معلومات التخزين المحلي.';
+    }
+  }
+
   async function saveTrack(track) {
     const db = await openDB();
     return new Promise((resolve, reject) => {
@@ -684,6 +919,7 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
     if (currentObjectUrl) {
       URL.revokeObjectURL(currentObjectUrl);
       currentObjectUrl = null;
+      currentObjectTrackId = null;
     }
   }
 
@@ -714,6 +950,31 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
   });
 
   $audio('streamAudio').addEventListener('click', async () => {
+    if (!navigator.onLine) {
+      try {
+        const track = await getTrack(select.value);
+        if (!track) {
+          status.textContent = 'أنت غير متصل بالإنترنت وهذه السورة غير محفوظة. اتصل بالإنترنت لتنزيلها أولًا.';
+          return;
+        }
+        releaseObjectUrl();
+        currentObjectUrl = URL.createObjectURL(track.blob);
+        currentObjectTrackId = Number(track.id);
+        player.src = currentObjectUrl;
+        player.load();
+        status.textContent = `لا يوجد اتصال. تشغيل سورة ${track.name} من النسخة المحفوظة على الجهاز.`;
+        try {
+          await player.play();
+        } catch {
+          status.textContent = 'السورة محفوظة. اضغط زر التشغيل داخل مشغل الصوت.';
+        }
+        return;
+      } catch (error) {
+        status.textContent = error.message || 'تعذر الوصول إلى النسخة المحفوظة.';
+        return;
+      }
+    }
+
     releaseObjectUrl();
     player.src = audioUrl(select.value);
     player.load();
@@ -729,28 +990,65 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
   downloadButton.addEventListener('click', async () => {
     if (busy) return;
     busy = true;
+    const downloadId = Number(select.value);
+    const downloadName = selectedName();
     downloadButton.disabled = true;
-    status.textContent = `جارٍ تنزيل سورة ${selectedName()}… لا تغلق التطبيق.`;
+    select.disabled = true;
+    if (downloadProgress) {
+      downloadProgress.hidden = false;
+      downloadProgress.value = 0;
+    }
+    status.textContent = `جارٍ تنزيل سورة ${downloadName}… لا تغلق التطبيق.`;
 
     try {
-      const response = await fetch(audioUrl(select.value));
+      const response = await fetch(audioUrl(downloadId));
       if (!response.ok) throw new Error(`فشل التنزيل: HTTP ${response.status}`);
 
-      const blob = await response.blob();
-      if (!blob.size || (blob.type && !blob.type.includes('audio'))) {
-        throw new Error('الملف المستلم ليس ملفًا صوتيًا صالحًا.');
+      const total = Number(response.headers.get('content-length')) || 0;
+      const contentType = response.headers.get('content-type') || 'audio/mpeg';
+      const chunks = [];
+      let received = 0;
+
+      if (response.body && response.body.getReader) {
+        const reader = response.body.getReader();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value);
+          received += value.byteLength;
+
+          const downloadedMb = (received / 1024 / 1024).toFixed(1);
+          if (total > 0) {
+            const percent = Math.min(100, Math.round((received / total) * 100));
+            if (downloadProgress) downloadProgress.value = percent;
+            status.textContent = `تنزيل سورة ${downloadName}… ${percent}% (${downloadedMb} ميغابايت)`;
+          } else {
+            status.textContent = `تنزيل سورة ${downloadName}… ${downloadedMb} ميغابايت`;
+          }
+        }
+      } else {
+        const fallbackBlob = await response.blob();
+        chunks.push(fallbackBlob);
+        received = fallbackBlob.size;
       }
 
+      const blob = new Blob(chunks, { type: contentType });
+      if (!(await isValidMp3Blob(blob))) {
+        throw new Error('الملف المستلم لا يبدو ملف MP3 صالحًا؛ لم يتم حفظه.');
+      }
+
+      if (downloadProgress) downloadProgress.value = 100;
       await saveTrack({
-        id: Number(select.value),
-        name: selectedName(),
+        id: downloadId,
+        name: downloadName,
         blob,
         size: blob.size,
         savedAt: Date.now()
       });
 
       const mb = (blob.size / 1024 / 1024).toFixed(2);
-      status.textContent = `تم حفظ سورة ${selectedName()} للاستماع دون إنترنت (${mb} ميغابايت).`;
+      status.textContent = `تم حفظ سورة ${downloadName} للاستماع دون إنترنت (${mb} ميغابايت).`;
+      await updateAudioStorageInfo();
     } catch (error) {
       console.error('Audio download failed:', error);
       status.textContent =
@@ -758,6 +1056,11 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
     } finally {
       busy = false;
       downloadButton.disabled = false;
+      select.disabled = false;
+      if (downloadProgress) {
+        downloadProgress.hidden = true;
+        downloadProgress.value = 0;
+      }
       await refreshAudioButtons();
     }
   });
@@ -771,6 +1074,7 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
       }
       releaseObjectUrl();
       currentObjectUrl = URL.createObjectURL(track.blob);
+      currentObjectTrackId = Number(track.id);
       player.src = currentObjectUrl;
       player.load();
       status.textContent = `تشغيل سورة ${track.name} من النسخة المحفوظة على الجهاز.`;
@@ -787,7 +1091,7 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
   deleteButton.addEventListener('click', async () => {
     try {
       await removeTrack(select.value);
-      if (currentObjectUrl) {
+      if (currentObjectUrl && currentObjectTrackId === Number(select.value)) {
         player.pause();
         player.removeAttribute('src');
         player.load();
@@ -795,6 +1099,7 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
       }
       status.textContent = `حُذفت النسخة المحفوظة من سورة ${selectedName()}.`;
       await refreshAudioButtons();
+      await updateAudioStorageInfo();
     } catch (error) {
       status.textContent = error.message || 'تعذر حذف النسخة المحفوظة.';
     }
@@ -818,6 +1123,7 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
   }
 
   refreshAudioButtons();
+  updateAudioStorageInfo();
 })();
 
 

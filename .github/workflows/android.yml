@@ -1,9 +1,12 @@
-
 name: Build and Release Mushaf Libya APK
 
 on:
   workflow_dispatch:
   push:
+    branches:
+      - main
+      - feature/offline-stability-phase1
+  pull_request:
     branches:
       - main
 
@@ -13,7 +16,6 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout project
         uses: actions/checkout@v4
@@ -29,15 +31,24 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p public/assets
-          test -d upload-parts
           shopt -s nullglob
           parts=(upload-parts/mushaf.part-*)
-          test "${#parts[@]}" -gt 0
-          cat "${parts[@]}" > public/assets/mushaf-qalun.pdf
+          if (( ${#parts[@]} > 0 )); then
+            cat "${parts[@]}" > public/assets/mushaf-qalun.pdf
+          elif [[ -s public/assets/mushaf-qalun.pdf ]]; then
+            echo "Using the existing Quran PDF."
+          else
+            echo "::error::Quran PDF source parts are missing. Add upload-parts/mushaf.part-* before building."
+            exit 1
+          fi
           test -s public/assets/mushaf-qalun.pdf
+          file public/assets/mushaf-qalun.pdf
 
       - name: Install Node dependencies
         run: npm ci
+
+      - name: Run unit tests
+        run: npm test
 
       - name: Build web app
         run: npm run build
@@ -53,21 +64,30 @@ jobs:
         with:
           packages: platform-tools
 
-      - name: Prepare signing key
+      - name: Prepare signing key when configured
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        shell: bash
         run: |
           set -euo pipefail
-          test -n "$KEYSTORE_BASE64"
+          if [[ -z "${KEYSTORE_BASE64}" || -z "${KEYSTORE_PASSWORD}" ||
+                -z "${KEY_ALIAS}" || -z "${KEY_PASSWORD}" ]]; then
+            echo "Release signing secrets are incomplete; producing an unsigned APK."
+            echo "SIGNING_CONFIGURED=false" >> "$GITHUB_ENV"
+            exit 0
+          fi
           mkdir -p "$RUNNER_TEMP/mushaf-signing"
-          echo "$KEYSTORE_BASE64" | base64 --decode \
-            > "$RUNNER_TEMP/mushaf-signing/mushaf-release.jks"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/mushaf-signing/mushaf-release.jks"
           test -s "$RUNNER_TEMP/mushaf-signing/mushaf-release.jks"
+          echo "SIGNING_CONFIGURED=true" >> "$GITHUB_ENV"
 
       - name: Sync Capacitor
         run: npx cap sync android
 
-      - name: Build signed release APK
+      - name: Build release APK
         working-directory: android
         env:
           KEYSTORE_FILE: ${{ runner.temp }}/mushaf-signing/mushaf-release.jks
@@ -76,17 +96,28 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
           VERSION_CODE: ${{ github.run_number }}
           VERSION_NAME: 1.0.${{ github.run_number }}
+        shell: bash
         run: |
           set -euo pipefail
           chmod +x gradlew
           ./gradlew --no-daemon assembleRelease
-          test -s app/build/outputs/apk/release/app-release.apk
+          if [[ -s app/build/outputs/apk/release/app-release.apk ]]; then
+            echo "APK_SOURCE=android/app/build/outputs/apk/release/app-release.apk" >> "$GITHUB_ENV"
+          elif [[ -s app/build/outputs/apk/release/app-release-unsigned.apk ]]; then
+            echo "APK_SOURCE=android/app/build/outputs/apk/release/app-release-unsigned.apk" >> "$GITHUB_ENV"
+          else
+            echo "::error::Gradle did not produce a release APK."
+            find app/build/outputs -maxdepth 5 -type f -name '*.apk' -print || true
+            exit 1
+          fi
 
       - name: Prepare APK
         run: |
-          cp android/app/build/outputs/apk/release/app-release.apk \
-            mushaf-libya.apk
+          cp "$APK_SOURCE" mushaf-libya.apk
           ls -lh mushaf-libya.apk
+          if [[ "${SIGNING_CONFIGURED:-false}" != "true" ]]; then
+            echo "::warning::This APK is unsigned. Configure the four signing secrets before publishing a production update."
+          fi
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4

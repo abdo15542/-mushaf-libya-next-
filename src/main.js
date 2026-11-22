@@ -3,6 +3,7 @@ import * as pdfjs from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import './style.css';
 import { surahNames } from './surah-index.js';
+import { connectionStatusText } from './offline-status.js';
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 
@@ -14,6 +15,7 @@ app.innerHTML = `
     <div class="brand">مصحف ليبيا</div>
     <div class="subtitle">المصحف التفاعلي · رواية قالون عن نافع</div>
     <button id="themeToggle" type="button" aria-label="تغيير المظهر">☼ المظهر</button>
+    <p id="connectionStatus" class="connection-status" role="status" aria-live="polite"></p>
   </header>
 
   <nav class="bottom-nav" aria-label="التنقل الرئيسي">
@@ -182,6 +184,18 @@ document.getElementById('continueReading')?.addEventListener('click', () => {
 });
 
 showView('homeView');
+
+// بيان حالة الاتصال بوضوح؛ لا يمنع ذلك استخدام الملفات المحفوظة محليًا.
+function updateConnectionStatus() {
+  const indicator = document.getElementById('connectionStatus');
+  if (!indicator) return;
+  const online = navigator.onLine;
+  indicator.textContent = connectionStatusText(online);
+  indicator.dataset.state = online ? 'online' : 'offline';
+}
+window.addEventListener('online', updateConnectionStatus);
+window.addEventListener('offline', updateConnectionStatus);
+updateConnectionStatus();
 
 const canvas = $('#pageCanvas');
 const ctx = canvas.getContext('2d');
@@ -557,7 +571,11 @@ $('#searchForm').addEventListener('submit', async event => {
     const response = await fetch('/assets/mushaf-qalun.pdf');
 
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status} عند تحميل المصحف`);
+      throw new Error(
+        response.status === 404
+          ? 'ملف المصحف غير موجود ضمن ملفات التطبيق. يلزم تضمين ملف mushaf-qalun.pdf في حزمة البناء.'
+          : `HTTP ${response.status} عند تحميل المصحف`
+      );
     }
 
     const data = new Uint8Array(await response.arrayBuffer());
@@ -565,7 +583,7 @@ $('#searchForm').addEventListener('submit', async event => {
     await renderPage(pageNumber);
   } catch (error) {
     console.error(error);
-    status.textContent = `فشل تحميل المصحف: ${error.message || error}`;
+    status.textContent = `تعذر تحميل المصحف: ${error.message || error}. ${navigator.onLine ? 'تحقق من وجود ملف المصحف في حزمة التطبيق.' : 'اتصل بالإنترنت مرة واحدة لتنزيل ملفات التطبيق ثم أعد المحاولة.'}`;
   }
 })();
 

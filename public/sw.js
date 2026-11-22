@@ -38,18 +38,7 @@ self.addEventListener('fetch', event => {
     // ملفات التطبيق والمصحف المحفوظة تُعرض فورًا دون انتظار الشبكة.
     if (!isNavigation && (isStaticAsset || isOfflineCritical)) {
       const cached = await cache.match(request);
-      if (cached) {
-        event.waitUntil((async () => {
-          try {
-            const fresh = await fetch(request);
-            if (fresh.ok && fresh.status === 200 && fresh.type === 'basic' &&
-                !fresh.headers.has('Content-Range')) {
-              await cache.put(request, fresh.clone());
-            }
-          } catch { /* النسخة المحلية تكفي عند انقطاع الشبكة. */ }
-        })());
-        return cached;
-      }
+      if (cached) return cached;
     }
 
     try {

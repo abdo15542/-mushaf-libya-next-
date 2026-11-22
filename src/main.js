@@ -3,7 +3,7 @@ import * as pdfjs from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import './style.css';
 import { surahNames } from './surah-index.js';
-import { getSurahMetadata } from './surah-metadata.js';
+import { getSurahMetadata, QALUN_TOTAL_AYAHS } from './surah-metadata.js';
 import { connectionStatusText } from './offline-status.js';
 import { isValidMp3Blob } from './audio-utils.js';
 
@@ -72,6 +72,7 @@ app.innerHTML = `
     <button id="toggleSurahIndex" type="button">📖 فهرس السور</button>
     <section id="surahIndexPanel" hidden>
       <h2>فهرس السور</h2>
+      <p class="audio-muted">114 سورة · 6214 آية · العد المدني الأخير المعتمد في فهرس قالون.</p>
       <label for="surahSearch">ابحث عن سورة</label>
       <input id="surahSearch" type="search" placeholder="اسم السورة">
       <label for="surahSelect">اختر السورة</label>
@@ -352,7 +353,7 @@ function updateSelectedSurahMetadata() {
     return;
   }
   const savedPage = getSurahPageMap()[metadata.number];
-  surahMetadataInfo.textContent = `سورة ${metadata.name} · ${metadata.ayahCount} آية · ${savedPage ? `صفحة البداية المحفوظة: ${savedPage}` : 'لم تُحدّد صفحة بدايتها بعد'}.`;
+  surahMetadataInfo.textContent = `سورة ${metadata.name} · ${metadata.ayahCount} آية · ${metadata.numbering} · إجمالي المصحف ${QALUN_TOTAL_AYAHS} آية · ${savedPage ? `صفحة البداية المحفوظة: ${savedPage}` : 'لم تُحدّد صفحة بدايتها بعد'}.`;
   surahPageInput.value = savedPage || '';
 }
 
